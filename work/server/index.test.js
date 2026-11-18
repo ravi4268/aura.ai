@@ -184,7 +184,7 @@ test("authenticated chat forwards conversation history to Gemini", async () => {
   assert.deepEqual(await response.json(), { reply: "Hello! How can I help?" });
   const providerUrl = new URL(upstreamRequest.url);
   assert.equal(providerUrl.origin, "https://generativelanguage.googleapis.com");
-  assert.equal(providerUrl.pathname, "/v1beta/models/gemini-2.5-flash:generateContent");
+  assert.equal(providerUrl.pathname, "/v1beta/models/gemini-3.8-flash:generateContent");
   assert.equal(providerUrl.searchParams.has("key"), false);
   assert.equal(upstreamRequest.options.headers["x-goog-api-key"], "server-only-test-key");
   assert.equal(upstreamRequest.options.headers.Authorization, undefined);
@@ -197,13 +197,32 @@ test("authenticated chat forwards conversation history to Gemini", async () => {
   ]);
 });
 
+test("greetings receive a reply without calling Gemini or requiring an API key", async () => {
+  const baseUrl = await startServer({
+    apiKey: "",
+    fetchImpl: async () => {
+      throw new Error("Gemini should not be called for a greeting");
+    },
+  });
+  const cookie = await signIn(baseUrl);
+
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { reply: "Hi! How can I help?" });
+});
+
 test("chat rejects anonymous requests and reports missing Gemini configuration", async () => {
   const baseUrl = await startServer({ apiKey: "", fetchImpl: async () => { throw new Error("Should not be called"); } });
 
   const anonymousResponse = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+    body: JSON.stringify({ messages: [{ role: "user", content: "Can you help me?" }] }),
   });
   assert.equal(anonymousResponse.status, 401);
 
@@ -211,7 +230,7 @@ test("chat rejects anonymous requests and reports missing Gemini configuration",
   const unconfiguredResponse = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+    body: JSON.stringify({ messages: [{ role: "user", content: "Can you help me?" }] }),
   });
   assert.equal(unconfiguredResponse.status, 503);
   assert.match((await unconfiguredResponse.json()).error, /GEMINI_API_KEY/);
@@ -236,7 +255,7 @@ test("chat gives actionable guidance when Gemini rejects the API key", async () 
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+    body: JSON.stringify({ messages: [{ role: "user", content: "Check my API key" }] }),
   });
   const data = await response.json();
 
@@ -266,7 +285,7 @@ test("chat explains provider rate limits and exhausted API quota", async () => {
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+      body: JSON.stringify({ messages: [{ role: "user", content: "Tell me a story" }] }),
     });
     const data = await response.json();
 

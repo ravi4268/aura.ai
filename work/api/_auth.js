@@ -1,5 +1,5 @@
 const crypto = require("node:crypto");
-const { DEFAULT_GEMINI_MODEL, generateGeminiReply } = require("../server/gemini");
+const { DEFAULT_GEMINI_MODEL, generateGeminiReply, getLocalGreetingReply } = require("../server/gemini");
 
 const SESSION_COOKIE = "aura_session";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
@@ -207,12 +207,6 @@ async function handleChat(request, response) {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    safeJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
-    return;
-  }
-
   const lastMessage = body.messages[body.messages.length - 1];
   if (!lastMessage || lastMessage.role !== "user" || typeof lastMessage.content !== "string" || !lastMessage.content.trim() || lastMessage.content.length > MAX_CHAT_MESSAGE_LENGTH) {
     safeJson(response, 400, { error: "Send a valid message to continue the conversation." });
@@ -222,6 +216,18 @@ async function handleChat(request, response) {
   const isValidConversation = body.messages.every((message) => message && ["user", "assistant"].includes(message.role) && typeof message.content === "string" && message.content.trim() && message.content.length <= MAX_CHAT_MESSAGE_LENGTH);
   if (!isValidConversation) {
     safeJson(response, 400, { error: "Send a valid message to continue the conversation." });
+    return;
+  }
+
+  const greetingReply = getLocalGreetingReply(body.messages);
+  if (greetingReply) {
+    safeJson(response, 200, { reply: greetingReply });
+    return;
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    safeJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
     return;
   }
 

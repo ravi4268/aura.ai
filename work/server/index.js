@@ -6,7 +6,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { URL } = require("node:url");
 const dotenv = require("dotenv");
-const { DEFAULT_GEMINI_MODEL, generateGeminiReply } = require("./gemini");
+const { DEFAULT_GEMINI_MODEL, generateGeminiReply, getLocalGreetingReply } = require("./gemini");
 
 const envPath = path.resolve(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
@@ -168,11 +168,6 @@ function createAuthServer({
       }
 
       try {
-        if (!apiKey) {
-          sendJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
-          return;
-        }
-
         const contentType = request.headers["content-type"] || "";
         if (!contentType.toLowerCase().startsWith("application/json")) {
           sendJson(response, 415, { error: "Content-Type must be application/json" });
@@ -196,6 +191,17 @@ function createAuthServer({
           body.messages[body.messages.length - 1].role !== "user"
         ) {
           sendJson(response, 400, { error: "Send a valid message to continue the conversation." });
+          return;
+        }
+
+        const greetingReply = getLocalGreetingReply(body.messages);
+        if (greetingReply) {
+          sendJson(response, 200, { reply: greetingReply });
+          return;
+        }
+
+        if (!apiKey) {
+          sendJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
           return;
         }
 

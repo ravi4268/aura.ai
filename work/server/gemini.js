@@ -1,8 +1,16 @@
 "use strict";
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 const SYSTEM_INSTRUCTION =
   "You are auraAI, a helpful, friendly assistant. Answer clearly and naturally. Reply in the language the user uses.";
+
+function getLocalGreetingReply(messages) {
+  const lastMessage = messages[messages.length - 1];
+  if (/^(hi|hello|hey)[!.?]*$/i.test(lastMessage.content.trim())) {
+    return "Hi! How can I help?";
+  }
+  return null;
+}
 
 async function generateGeminiReply({ apiKey, model = DEFAULT_GEMINI_MODEL, messages, fetchImpl = globalThis.fetch }) {
   if (typeof fetchImpl !== "function") {
@@ -80,4 +88,4 @@ async function generateGeminiReply({ apiKey, model = DEFAULT_GEMINI_MODEL, messa
   return reply;
 }
 
-module.exports = { DEFAULT_GEMINI_MODEL, generateGeminiReply };
+module.exports = { DEFAULT_GEMINI_MODEL, generateGeminiReply, getLocalGreetingReply };

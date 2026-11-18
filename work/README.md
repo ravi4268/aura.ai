@@ -9,7 +9,7 @@ This app is ready for Vercel deployment. In the Vercel Project Settings > Enviro
 ```env
 SANIDHYA_PASSWORD=choose_a_private_password_at_least_8_characters
 GEMINI_API_KEY=your_google_ai_studio_api_key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 ```
 
 Set the Vercel project Root Directory to `work` (the folder containing this `package.json`), then redeploy. Vercel detects the `api/` serverless functions automatically; `vercel.json` only provides the client-side route fallback.
@@ -26,12 +26,14 @@ GEMINI_API_KEY=your_google_ai_studio_api_key
 
 The backend loads this file automatically. Do not commit it or put the key in React code. Start the API and React app in separate terminals from the project directory.
 
+Sending `hi`, `hello`, or `hey` gets a quick greeting without using Gemini quota. Other messages are sent to Gemini and need an active `GEMINI_API_KEY`.
+
 In PowerShell terminal 1, set the account password and start the API:
 
 ```powershell
 $env:SANIDHYA_PASSWORD = '<your private password>'
 # Optional: choose another Gemini model
-$env:GEMINI_MODEL = 'gemini-2.5-flash'
+$env:GEMINI_MODEL = 'gemini-3.8-flash'
 npm run server
 ```
 
@@ -45,7 +47,7 @@ Open the URL printed by `npm start` (usually [http://localhost:3000](http://loca
 
 After updating the backend code, stop any older `npm run server` process with `Ctrl+C` and start it again with the environment variables above. An older server process does not load the new `/api/chat` route until it is restarted.
 
-If chat reports that the Gemini API quota or rate limit was reached, check your Google AI Studio project quota and billing settings. For a temporary rate limit, wait briefly before sending another message. Messages already sent remain in the conversation, and you can continue chatting when the provider is available.
+If another message reports that the Gemini API quota or rate limit was reached, check your Google AI Studio project quota and billing settings. For a temporary rate limit, wait briefly before sending it again. Messages already sent remain in the conversation, and you can continue chatting when the provider is available.
 
 The API requires a password of at least eight characters. Sessions use an HttpOnly, SameSite=Strict cookie and are held in memory; restarting the server signs users out. Production deployments must use HTTPS. Use a shared persistent session store before running multiple API instances.
 
