@@ -7,7 +7,7 @@ A responsive AI workspace with a dark dashboard and a Node.js login API.
 This app is ready for Vercel deployment. In the Vercel Project Settings > Environment Variables, add:
 
 ```env
-SANIDHYA_PASSWORD=choose_a_private_password_at_least_8_characters
+SANIDHYA_PASSWORD=1234
 GEMINI_API_KEY=your_google_ai_studio_api_key
 GEMINI_MODEL=gemini-3.8-flash
 ```
@@ -49,7 +49,7 @@ After updating the backend code, stop any older `npm run server` process with `C
 
 If another message reports that the Gemini API quota or rate limit was reached, check your Google AI Studio project quota and billing settings. For a temporary rate limit, wait briefly before sending it again. Messages already sent remain in the conversation, and you can continue chatting when the provider is available.
 
-The API requires a password of at least eight characters. Sessions use an HttpOnly, SameSite=Strict cookie and are held in memory; restarting the server signs users out. Production deployments must use HTTPS. Use a shared persistent session store before running multiple API instances.
+The API requires a password of at least four characters. Sessions use an HttpOnly, SameSite=Strict cookie and are held in memory; restarting the server signs users out. Production deployments must use HTTPS. Use a shared persistent session store before running multiple API instances.
 
 ## Authentication API
 

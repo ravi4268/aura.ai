@@ -32,7 +32,7 @@ function Login({ onLogin, error, isSubmitting }) {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
-              minLength={8}
+              minLength={4}
             />
             <button
               className="password-visibility-button"

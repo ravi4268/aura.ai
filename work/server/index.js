@@ -99,8 +99,8 @@ function createAuthServer({
   model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
   fetchImpl = globalThis.fetch,
 } = {}) {
-  if (typeof password !== "string" || password.length < 8) {
-    throw new Error("A server-side password of at least 8 characters is required.");
+  if (typeof password !== "string" || password.length < 4) {
+    throw new Error("A server-side password of at least 4 characters is required.");
   }
 
   const passwordSalt = crypto.createHash("sha256").update("auraAI:Sanidhya:v1").digest();

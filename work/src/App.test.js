@@ -158,14 +158,14 @@ test("login password can be shown and hidden without changing its value", async 
   const password = await screen.findByLabelText("Password");
 
   expect(password).toHaveAttribute("type", "password");
-  fireEvent.change(password, { target: { value: "sanidhya2005" } });
+  fireEvent.change(password, { target: { value: "1234" } });
   fireEvent.click(screen.getByRole("button", { name: "Show password" }));
 
   expect(password).toHaveAttribute("type", "text");
-  expect(password).toHaveValue("sanidhya2005");
+  expect(password).toHaveValue("1234");
   fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
   expect(password).toHaveAttribute("type", "password");
-  expect(password).toHaveValue("sanidhya2005");
+  expect(password).toHaveValue("1234");
 });
 
 test("suggestions fill the prompt and the AI replies to submitted messages", async () => {
