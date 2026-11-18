@@ -12,6 +12,8 @@ GEMINI_API_KEY=your_google_ai_studio_api_key
 GEMINI_MODEL=gemini-2.5-flash
 ```
 
+Set the Vercel project Root Directory to `work` (the folder containing this `package.json`), then redeploy. Vercel detects the `api/` serverless functions automatically; `vercel.json` only provides the client-side route fallback.
+
 The application expects the password to be set in the deployment environment for login to work. The frontend is served from the `build` folder and the `/api/*` routes are handled by the files in the `api/` folder.
 
 ## Run locally
