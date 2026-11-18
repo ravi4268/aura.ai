@@ -69,6 +69,21 @@ test("login creates a session and logout invalidates it", async () => {
   assert.equal(invalidatedResponse.status, 401);
 });
 
+test("login accepts trailing slashes and rejects invalid methods with 405", async () => {
+  const baseUrl = await startServer();
+
+  const trailingSlashLoginResponse = await fetch(`${baseUrl}/api/auth/login/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "correct-horse-battery" }),
+  });
+  assert.equal(trailingSlashLoginResponse.status, 200);
+
+  const logoutMethodResponse = await fetch(`${baseUrl}/api/auth/logout`);
+  assert.equal(logoutMethodResponse.status, 405);
+  assert.match(logoutMethodResponse.headers.get("allow") || "", /POST/i);
+});
+
 test("login rejects an incorrect password", async () => {
   const baseUrl = await startServer();
 
@@ -112,7 +127,7 @@ test("login rate limits repeated incorrect passwords", async () => {
   assert.equal(rateLimitedResponse.status, 429);
 });
 
-test("authenticated chat forwards conversation history to the AI provider", async () => {
+test("authenticated chat forwards conversation history to Gemini", async () => {
   let upstreamRequest;
   const baseUrl = await startServer({
     apiKey: "server-only-test-key",
@@ -120,7 +135,9 @@ test("authenticated chat forwards conversation history to the AI provider", asyn
       upstreamRequest = { url, options };
       return {
         ok: true,
-        json: async () => ({ choices: [{ message: { content: "Hello! How can I help?" } }] }),
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: "Hello! How can I help?" }] } }],
+        }),
       };
     },
   });
@@ -139,12 +156,22 @@ test("authenticated chat forwards conversation history to the AI provider", asyn
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { reply: "Hello! How can I help?" });
-  assert.equal(upstreamRequest.url, "https://api.openai.com/v1/chat/completions");
-  assert.equal(upstreamRequest.options.headers.Authorization, "Bearer server-only-test-key");
-  assert.deepEqual(JSON.parse(upstreamRequest.options.body).messages.slice(1), messages);
+  const providerUrl = new URL(upstreamRequest.url);
+  assert.equal(providerUrl.origin, "https://generativelanguage.googleapis.com");
+  assert.equal(providerUrl.pathname, "/v1beta/models/gemini-2.5-flash:generateContent");
+  assert.equal(providerUrl.searchParams.has("key"), false);
+  assert.equal(upstreamRequest.options.headers["x-goog-api-key"], "server-only-test-key");
+  assert.equal(upstreamRequest.options.headers.Authorization, undefined);
+  const requestBody = JSON.parse(upstreamRequest.options.body);
+  assert.match(requestBody.systemInstruction.parts[0].text, /reply in the language the user uses/i);
+  assert.deepEqual(requestBody.contents, [
+    { role: "user", parts: [{ text: "Hi" }] },
+    { role: "model", parts: [{ text: "Hello!" }] },
+    { role: "user", parts: [{ text: "Can you help me plan my day?" }] },
+  ]);
 });
 
-test("chat rejects anonymous requests and reports missing AI configuration", async () => {
+test("chat rejects anonymous requests and reports missing Gemini configuration", async () => {
   const baseUrl = await startServer({ apiKey: "", fetchImpl: async () => { throw new Error("Should not be called"); } });
 
   const anonymousResponse = await fetch(`${baseUrl}/api/chat`, {
@@ -161,16 +188,21 @@ test("chat rejects anonymous requests and reports missing AI configuration", asy
     body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
   });
   assert.equal(unconfiguredResponse.status, 503);
-  assert.match((await unconfiguredResponse.json()).error, /OPENAI_API_KEY/);
+  assert.match((await unconfiguredResponse.json()).error, /GEMINI_API_KEY/);
 });
 
-test("chat gives actionable guidance when the AI provider rejects the API key", async () => {
+test("chat gives actionable guidance when Gemini rejects the API key", async () => {
   const baseUrl = await startServer({
     apiKey: "server-only-test-key",
     fetchImpl: async () => ({
       ok: false,
-      status: 401,
-      json: async () => ({ error: { message: "Incorrect API key provided: server-only-test-key" } }),
+      status: 400,
+      json: async () => ({
+        error: {
+          status: "API_KEY_INVALID",
+          message: "API key not valid. Please pass a valid API key.",
+        },
+      }),
     }),
   });
   const cookie = await signIn(baseUrl);
@@ -183,6 +215,67 @@ test("chat gives actionable guidance when the AI provider rejects the API key", 
   const data = await response.json();
 
   assert.equal(response.status, 502);
-  assert.match(data.error, /OPENAI_API_KEY in \.env/);
+  assert.match(data.error, /GEMINI_API_KEY/);
   assert.doesNotMatch(data.error, /server-only-test-key/);
+});
+
+test("chat explains provider rate limits and exhausted API quota", async () => {
+  const providerErrors = [
+    {
+      error: { error: { status: "RESOURCE_EXHAUSTED" } },
+      expectedMessage: /quota or rate limit/i,
+    },
+  ];
+
+  for (const providerError of providerErrors) {
+    const baseUrl = await startServer({
+      apiKey: "server-only-test-key",
+      fetchImpl: async () => ({
+        ok: false,
+        status: 429,
+        json: async () => providerError.error,
+      }),
+    });
+    const cookie = await signIn(baseUrl);
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Hi" }] }),
+    });
+    const data = await response.json();
+
+    assert.equal(response.status, 429);
+    assert.match(data.error, providerError.expectedMessage);
+  }
+});
+
+test("Gemini conversations can continue when the bounded history begins with an assistant turn", async () => {
+  let requestBody;
+  const baseUrl = await startServer({
+    apiKey: "server-only-test-key",
+    fetchImpl: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ candidates: [{ content: { parts: [{ text: "Done." }] } }] }),
+      };
+    },
+  });
+  const cookie = await signIn(baseUrl);
+
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({
+      messages: [
+        { role: "assistant", content: "Earlier answer outside the current window." },
+        { role: "user", content: "Continue from here." },
+      ],
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(requestBody.contents, [
+    { role: "user", parts: [{ text: "Continue from here." }] },
+  ]);
 });

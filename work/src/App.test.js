@@ -57,17 +57,88 @@ async function signIn() {
   await screen.findByText(/a little help can/i);
 }
 
-test("shows the named login screen and signs in to the responsive AI dashboard", async () => {
+test("shows the named login screen and signs in to the responsive AI landing screen", async () => {
   render(<App />);
 
   expect(await screen.findByRole("heading", { name: /welcome back, sanidhya/i })).toBeInTheDocument();
   await signIn();
-  expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /open sidebar/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /a little help can/i })).toBeInTheDocument();
+  expect(document.querySelector(".app-shell")).toHaveClass("app-shell-landing");
+  expect(screen.getByRole("complementary")).toBeInTheDocument();
+  expect(screen.getByRole("banner")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /new chat/i })).toBeInTheDocument();
   expect(global.fetch).toHaveBeenCalledWith(
     "/api/auth/login",
     expect.objectContaining({ method: "POST", credentials: "same-origin" }),
   );
+});
+
+test("replies to Hi and includes earlier turns in follow-up requests", async () => {
+  render(<App />);
+  await signIn();
+
+  global.fetch
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ reply: "Hi!" }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ reply: "I can help with that." }),
+    });
+
+  const prompt = screen.getByRole("textbox", { name: /message ai/i });
+  fireEvent.change(prompt, { target: { value: "hi" } });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+  expect(await screen.findByText("Hi!")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+    target: { value: "Can you help me?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+  expect(await screen.findByText("I can help with that.")).toBeInTheDocument();
+
+  expect(global.fetch).toHaveBeenLastCalledWith(
+    "/api/chat",
+    expect.objectContaining({
+      body: JSON.stringify({
+        messages: [
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "Hi!" },
+          { role: "user", content: "Can you help me?" },
+        ],
+      }),
+    }),
+  );
+  expect(screen.getByText("hi", { selector: ".message-row-user p" })).toBeInTheDocument();
+  expect(screen.getByText("Hi!")).toBeInTheDocument();
+});
+
+test("New chat shows the full welcome screen and starts a fresh AI conversation", async () => {
+  render(<App />);
+  await signIn();
+
+  fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+    target: { value: "First conversation" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+  expect(await screen.findByText("Hello! How can I help?")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /open sidebar/i }));
+  fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+
+  expect(screen.getByRole("heading", { name: /a little help can/i })).toBeInTheDocument();
+  expect(document.querySelector(".app-shell")).toHaveClass("app-shell-landing");
+  expect(screen.queryByText("First conversation")).not.toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+    target: { value: "Hi" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+  expect(await screen.findByText("Hello! How can I help?")).toBeInTheDocument();
+  expect(screen.getByText("Hi", { selector: ".message-row-user p" })).toBeInTheDocument();
 });
 
 test("shows backend login errors without opening the dashboard", async () => {
@@ -126,7 +197,7 @@ test("AI request errors are shown in the conversation", async () => {
   global.fetch.mockResolvedValueOnce({
     ok: false,
     status: 503,
-    json: () => Promise.resolve({ error: "AI is not configured. Add OPENAI_API_KEY to the server environment." }),
+    json: () => Promise.resolve({ error: "AI is not configured. Add GEMINI_API_KEY to the server environment." }),
   });
 
   fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
@@ -134,7 +205,39 @@ test("AI request errors are shown in the conversation", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/add openai_api_key/i);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/add gemini_api_key/i);
+});
+
+test("keeps sent messages and allows continuing after an AI rate limit", async () => {
+  render(<App />);
+  await signIn();
+  global.fetch
+    .mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      json: () => Promise.resolve({ error: "The AI service is receiving requests too quickly. Wait a moment, then try again." }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ reply: "Hello! How can I help?" }),
+    });
+
+  const prompt = screen.getByRole("textbox", { name: /message ai/i });
+  fireEvent.change(prompt, { target: { value: "Hi" } });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(/receiving requests too quickly/i);
+  expect(screen.getByText("Hi", { selector: ".message-row-user p" })).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+    target: { value: "Can you help me?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+  expect(await screen.findByText("Hello! How can I help?")).toBeInTheDocument();
+  expect(screen.getByText("Hi", { selector: ".message-row-user p" })).toBeInTheDocument();
+  expect(screen.getByText("Can you help me?", { selector: ".message-row-user p" })).toBeInTheDocument();
 });
 
 test("outdated backend shows a clear restart message instead of Not found", async () => {
@@ -159,6 +262,11 @@ test("logging out ends the session and returns to the login screen", async () =>
   render(<App />);
   await signIn();
 
+  fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+    target: { value: "Hi" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+  await screen.findByText("Hello! How can I help?");
   fireEvent.click(screen.getByRole("button", { name: /log out/i }));
   expect(await screen.findByRole("heading", { name: /welcome back, sanidhya/i })).toBeInTheDocument();
   expect(global.fetch).toHaveBeenCalledWith(

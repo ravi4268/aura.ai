@@ -6,17 +6,18 @@ const http = require("node:http");
 const path = require("node:path");
 const { URL } = require("node:url");
 const dotenv = require("dotenv");
+const { DEFAULT_GEMINI_MODEL, generateGeminiReply } = require("./gemini");
 
 const envPath = path.resolve(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
   const { error, parsed = {} } = dotenv.config({ path: envPath, quiet: true });
   if (error) throw error;
 
-  if (/^<[^>]+>$/.test((process.env.OPENAI_API_KEY || "").trim())) {
-    if (parsed.OPENAI_API_KEY) {
-      process.env.OPENAI_API_KEY = parsed.OPENAI_API_KEY;
+  if (/^<[^>]+>$/.test((process.env.GEMINI_API_KEY || "").trim())) {
+    if (parsed.GEMINI_API_KEY) {
+      process.env.GEMINI_API_KEY = parsed.GEMINI_API_KEY;
     } else {
-      delete process.env.OPENAI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
     }
   }
 }
@@ -94,8 +95,8 @@ function getCookie(request, name) {
 function createAuthServer({
   password,
   secureCookies = false,
-  apiKey = process.env.OPENAI_API_KEY,
-  model = process.env.OPENAI_MODEL || "gpt-4o-mini",
+  apiKey = process.env.GEMINI_API_KEY,
+  model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (typeof password !== "string" || password.length < 8) {
@@ -115,14 +116,15 @@ function createAuthServer({
 
   const server = http.createServer(async (request, response) => {
     const requestUrl = new URL(request.url, "http://localhost");
-    const route = requestUrl.pathname;
+    const route = (requestUrl.pathname || "/").replace(/\/+$/, "") || "/";
+    const allowedRoutes = new Set([
+      "/api/auth/login",
+      "/api/auth/logout",
+      "/api/auth/session",
+      "/api/chat",
+    ]);
 
-    if (
-      route !== "/api/auth/login" &&
-      route !== "/api/auth/logout" &&
-      route !== "/api/auth/session" &&
-      route !== "/api/chat"
-    ) {
+    if (!allowedRoutes.has(route)) {
       sendJson(response, 404, { error: "Not found" });
       return;
     }
@@ -167,11 +169,8 @@ function createAuthServer({
 
       try {
         if (!apiKey) {
-          sendJson(response, 503, { error: "AI is not configured. Add OPENAI_API_KEY to the server environment." });
+          sendJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
           return;
-        }
-        if (typeof fetchImpl !== "function") {
-          throw new Error("This server requires Node.js 18 or newer for AI chat.");
         }
 
         const contentType = request.headers["content-type"] || "";
@@ -200,50 +199,19 @@ function createAuthServer({
           return;
         }
 
-        const upstreamResponse = await fetchImpl("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: "system",
-                content: "You are auraAI, a helpful, friendly assistant. Answer clearly and naturally. Reply in the language the user uses.",
-              },
-              ...body.messages.map(({ role, content }) => ({ role, content: content.trim() })),
-            ],
-          }),
-          signal: AbortSignal.timeout(60000),
+        const reply = await generateGeminiReply({
+          apiKey,
+          model,
+          messages: body.messages,
+          fetchImpl,
         });
-        let responseData;
-        try {
-          responseData = await upstreamResponse.json();
-        } catch {
-          throw new Error("The AI provider returned an invalid response.");
-        }
-        if (!upstreamResponse.ok) {
-          console.error("AI provider request failed with status:", upstreamResponse.status);
-          if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
-            sendJson(response, 502, {
-              error: "OpenAI rejected the API key. Check that OPENAI_API_KEY in .env is active and correct, then restart the backend.",
-            });
-            return;
-          }
-          sendJson(response, 502, { error: "The AI could not answer right now. Please try again." });
-          return;
-        }
-
-        const answer = responseData.choices?.[0]?.message?.content;
-        if (typeof answer !== "string" || !answer.trim()) {
-          throw new Error("The AI provider returned an empty answer.");
-        }
-        sendJson(response, 200, { reply: answer.trim() });
+        sendJson(response, 200, { reply });
       } catch (error) {
         if (error.statusCode) {
-          sendJson(response, error.statusCode, { error: error.message });
+          if (error.providerStatus) {
+            console.error("Gemini request failed with status:", error.providerStatus);
+          }
+          sendJson(response, error.statusCode, { error: error.publicMessage || error.message });
           return;
         }
         console.error("AI chat request failed:", error);

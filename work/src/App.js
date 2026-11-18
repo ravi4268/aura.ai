@@ -91,6 +91,7 @@ function App() {
   const [authStatus, setAuthStatus] = useState("checking");
   const [authError, setAuthError] = useState("");
   const [logoutError, setLogoutError] = useState("");
+  const isLandingScreen = activeSection === "Chats" && messages.length === 0;
 
   useEffect(() => {
     let active = true;
@@ -383,7 +384,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isLandingScreen ? " app-shell-landing" : ""}`}>
       {sidebarOpen && (
         <button
           className="sidebar-backdrop"
