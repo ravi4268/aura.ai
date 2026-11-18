@@ -103,10 +103,10 @@ function validateSignedInUser(request) {
   return session;
 }
 
-async function handleAuthentication(request, response) {
+async function handleAuthentication(request, response, routePath) {
   const url = new URL(request.url || "/", "https://example.com");
   const { method } = request;
-  const pathname = (url.pathname || "/").replace(/\/+$/, "") || "/";
+  const pathname = (routePath || url.pathname || "/").replace(/\/+$/, "") || "/";
   const allowedRoutes = new Set(["/api/auth/login", "/api/auth/logout", "/api/auth/session"]);
 
   if (!allowedRoutes.has(pathname)) {

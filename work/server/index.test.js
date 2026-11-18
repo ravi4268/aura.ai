@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const { afterEach, test } = require("node:test");
 const { createAuthServer } = require("./index");
+const loginHandler = require("../api/auth/login");
 
 const servers = [];
 
@@ -82,6 +83,31 @@ test("login accepts trailing slashes and rejects invalid methods with 405", asyn
   const logoutMethodResponse = await fetch(`${baseUrl}/api/auth/logout`);
   assert.equal(logoutMethodResponse.status, 405);
   assert.match(logoutMethodResponse.headers.get("allow") || "", /POST/i);
+});
+
+test("Vercel login handler works when the runtime rewrites the request URL", async () => {
+  const previousPassword = process.env.SANIDHYA_PASSWORD;
+  process.env.SANIDHYA_PASSWORD = "correct-horse-battery";
+  const responseHeaders = {};
+  const response = {
+    setHeader(name, value) {
+      responseHeaders[name.toLowerCase()] = value;
+    },
+    end(body) {
+      this.body = body;
+    },
+  };
+
+  try {
+    await loginHandler({ method: "POST", url: "/", body: { password: "correct-horse-battery" } }, response);
+  } finally {
+    if (previousPassword === undefined) delete process.env.SANIDHYA_PASSWORD;
+    else process.env.SANIDHYA_PASSWORD = previousPassword;
+  }
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(JSON.parse(response.body), { user: { name: "Sanidhya" } });
+  assert.match(responseHeaders["set-cookie"], /HttpOnly/);
 });
 
 test("login rejects an incorrect password", async () => {
