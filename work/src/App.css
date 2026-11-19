@@ -498,6 +498,12 @@
 
 .prompt-hint-dot { width: 5px; height: 5px; }
 
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .send-button {
   display: grid;
   width: 30px;
@@ -1785,6 +1791,185 @@
   animation: welcome-in 420ms ease both;
 }
 
+.android-install-banner {
+  position: fixed;
+  z-index: 25;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  width: min(340px, calc(100vw - 36px));
+  min-height: 64px;
+  padding: 9px 10px;
+  color: #eee9f4;
+  background: #1d1b20;
+  border: 1px solid #3b3542;
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgb(0 0 0 / 35%);
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.android-install-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  color: #17121d;
+  background: #c4a8f0;
+  border-radius: 12px;
+  font-family: Georgia, serif;
+  font-size: 24px;
+  place-items: center;
+}
+.android-install-banner > span:nth-child(2) { display: grid; flex: 1; gap: 3px; }
+.android-install-banner strong { font-size: 12px; }
+.android-install-banner small { color: #aaa3b3; font-size: 10px; }
+.android-install-action { color: #c4a8f0; font-size: 11px; font-weight: 700; }
+
+.phone-call-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  color: #b8b1c0;
+  background: #29272d;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  place-items: center;
+}
+.phone-call-button:hover { color: #17121d; background: #c4a8f0; }
+.phone-call-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.live-call-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  color: #b8b1c0;
+  background: #29272d;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  place-items: center;
+}
+.live-call-button:hover { color: #17121d; background: #c4a8f0; }
+.live-call-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.call-phone-input {
+  min-height: 44px;
+  padding: 0 12px;
+}
+.phone-call-success,
+.phone-call-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.phone-call-success { color: #a9d6b7; }
+.phone-call-note { margin-top: 16px; color: #a79f97; }
+.dialog-submit:disabled { cursor: not-allowed; opacity: 0.65; }
+.live-call-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(12 11 14 / 72%);
+  backdrop-filter: blur(12px);
+}
+.live-call-card {
+  width: min(380px, calc(100vw - 36px));
+  min-height: 480px;
+  padding: 25px;
+  color: #f4f0fa;
+  text-align: center;
+  background: radial-gradient(circle at 50% 30%, #30263e 0, #171419 48%, #101012 100%);
+  border: 1px solid #39333f;
+  border-radius: 26px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+.live-call-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bbb4c4;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.live-status-dot {
+  width: 7px;
+  height: 7px;
+  background: #81b99a;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #81b99a;
+}
+.live-orb {
+  display: grid;
+  width: 150px;
+  height: 150px;
+  margin: 55px auto 28px;
+  border: 1px solid #c4a8f055;
+  border-radius: 50%;
+  background: radial-gradient(circle, #d9c8f0 0, #b79bd8 28%, #6d5885 58%, #292330 72%);
+  box-shadow: 0 0 45px rgb(196 168 240 / 28%);
+  place-items: center;
+}
+.live-orb-active { animation: live-pulse 1.5s ease-in-out infinite; }
+.live-orb .brand-mark { width: 52px; height: 52px; background: rgb(255 255 255 / 18%); border-radius: 18px; }
+.live-orb .brand-mark svg { width: 34px; }
+@keyframes live-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 38px rgb(196 168 240 / 24%); }
+  50% { transform: scale(1.055); box-shadow: 0 0 70px rgb(196 168 240 / 48%); }
+}
+.live-call-card h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 400; }
+.live-transcript,
+.live-call-error {
+  min-height: 43px;
+  margin: 15px 8px 5px;
+  color: #aaa3b3;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.live-call-error { color: #e7aaa6; }
+.live-call-controls { display: flex; justify-content: center; margin-top: 20px; gap: 18px; }
+.live-control {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  color: #eee9f4;
+  background: #302d33;
+  border: 1px solid #45404a;
+  border-radius: 50%;
+  cursor: pointer;
+  place-items: center;
+}
+.live-control-active { color: #17121d; background: #c4a8f0; }
+.live-control-end { background: #d66c67; border-color: #d66c67; }
+.live-control svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
 @media (max-width: 480px) {
   .app-shell-landing .chat-area {
     padding: 24px 18px;
@@ -1815,5 +2000,11 @@
 
   .login-card {
     padding: 25px 21px;
+  }
+
+  .android-install-banner {
+    right: 10px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
   }
 }

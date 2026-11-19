@@ -6,7 +6,15 @@ const http = require("node:http");
 const path = require("node:path");
 const { URL } = require("node:url");
 const dotenv = require("dotenv");
-const { DEFAULT_GEMINI_MODEL, generateGeminiReply, getLocalGreetingReply } = require("./gemini");
+const {
+  DEFAULT_GEMINI_MODEL,
+  MAX_AUDIO_BYTES,
+  decodeAudioPayload,
+  generateGeminiReply,
+  getLocalGreetingReply,
+  transcribeGeminiAudio,
+} = require("./gemini");
+const { createTwilioCall, getPublicBaseUrl } = require("./twilio");
 
 const envPath = path.resolve(__dirname, "..", ".env");
 if (fs.existsSync(envPath)) {
@@ -27,6 +35,7 @@ const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const SESSION_DURATION_SECONDS = SESSION_DURATION_MS / 1000;
 const MAX_BODY_BYTES = 8 * 1024;
 const MAX_CHAT_BODY_BYTES = 32 * 1024;
+const MAX_AUDIO_BODY_BYTES = Math.ceil(MAX_AUDIO_BYTES / 3) * 4 + 4096;
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_MESSAGE_LENGTH = 4000;
 const LOGIN_WINDOW_MS = 5 * 60 * 1000;
@@ -82,6 +91,20 @@ function readJsonBody(request, maxBodyBytes = MAX_BODY_BYTES) {
   });
 }
 
+function readFormBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const data = {};
+      for (const [key, value] of new URLSearchParams(body)) data[key] = value;
+      resolve(data);
+    });
+    request.on("error", reject);
+  });
+}
+
 function getCookie(request, name) {
   const cookieHeader = request.headers.cookie || "";
   const cookie = cookieHeader
@@ -98,6 +121,7 @@ function createAuthServer({
   apiKey = process.env.GEMINI_API_KEY,
   model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
   fetchImpl = globalThis.fetch,
+  twilioEnv = process.env,
 } = {}) {
   if (typeof password !== "string" || password.length < 4) {
     throw new Error("A server-side password of at least 4 characters is required.");
@@ -122,6 +146,11 @@ function createAuthServer({
       "/api/auth/logout",
       "/api/auth/session",
       "/api/chat",
+      "/api/call/start",
+      "/api/voice/transcribe",
+      "/api/voice/answer",
+      "/api/voice/turn",
+      "/api/voice/status",
     ]);
 
     if (!allowedRoutes.has(route)) {
@@ -155,6 +184,94 @@ function createAuthServer({
     if (route === "/api/auth/logout") {
       sessions.delete(getCookie(request, SESSION_COOKIE));
       sendNoContent(response, { "Set-Cookie": clearSessionCookie() });
+      return;
+    }
+
+    if (route === "/api/call/start") {
+      const sessionId = getCookie(request, SESSION_COOKIE);
+      const session = sessions.get(sessionId);
+      if (!session || session.expiresAt <= Date.now()) {
+        sessions.delete(sessionId);
+        sendJson(response, 401, { error: "Please sign in again before starting a phone call." });
+        return;
+      }
+
+      try {
+        const body = await readJsonBody(request, MAX_BODY_BYTES);
+        const call = await createTwilioCall(body?.to, { env: twilioEnv, fetchImpl });
+        sendJson(response, 200, call);
+      } catch (error) {
+        sendJson(response, error.statusCode || 502, { error: error.message || "Could not start the phone call." });
+      }
+      return;
+    }
+
+    if (route === "/api/voice/transcribe") {
+      const sessionId = getCookie(request, SESSION_COOKIE);
+      const session = sessions.get(sessionId);
+      if (!session || session.expiresAt <= Date.now()) {
+        sessions.delete(sessionId);
+        sendJson(response, 401, { error: "Please sign in again before using voice chat." });
+        return;
+      }
+
+      if (!(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+        sendJson(response, 415, { error: "Content-Type must be application/json." });
+        return;
+      }
+
+      try {
+        const body = await readJsonBody(request, MAX_AUDIO_BODY_BYTES);
+        const { audio, mimeType } = decodeAudioPayload(body);
+        if (!apiKey) {
+          sendJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
+          return;
+        }
+
+        const transcript = await transcribeGeminiAudio({ apiKey, model, audio, mimeType, fetchImpl });
+        sendJson(response, 200, { transcript });
+      } catch (error) {
+        if (error.providerStatus) console.error("Gemini transcription failed with status:", error.providerStatus);
+        sendJson(response, error.statusCode || 502, {
+          error: error.publicMessage || error.message || "Could not transcribe the audio. Please try again.",
+        });
+      }
+      return;
+    }
+
+    if (route === "/api/voice/status") {
+      sendNoContent(response);
+      return;
+    }
+
+    if (route === "/api/voice/answer") {
+      const baseUrl = getPublicBaseUrl(twilioEnv);
+      response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-store" });
+      response.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Aditi" language="hi-IN">Namaste. Main auraAI hoon. Aap kya baat karna chahenge?</Say><Gather input="speech" language="hi-IN" speechTimeout="auto" action="${baseUrl}/api/voice/turn" method="POST"/><Say voice="Polly.Aditi" language="hi-IN">Aapki awaaz sunai nahi di. Alvida.</Say></Response>`);
+      return;
+    }
+
+    if (route === "/api/voice/turn") {
+      try {
+        const body = await readFormBody(request);
+        const speech = typeof body?.SpeechResult === "string" ? body.SpeechResult.trim() : "";
+        const baseUrl = getPublicBaseUrl(twilioEnv);
+        if (!speech) {
+          response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-store" });
+          response.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Aditi" language="hi-IN">Aapki baat saaf sunai nahi di. Kripya phir se boliye.</Say><Gather input="speech" language="hi-IN" speechTimeout="auto" action="${baseUrl}/api/voice/turn" method="POST"/></Response>`);
+          return;
+        }
+
+        if (!apiKey) throw new Error("AI is not configured.");
+        const reply = await generateGeminiReply({ apiKey, model, messages: [{ role: "user", content: speech }], fetchImpl });
+        const safeReply = reply.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Aditi" language="hi-IN">${safeReply}</Say><Gather input="speech" language="hi-IN" speechTimeout="auto" action="${baseUrl}/api/voice/turn" method="POST"/></Response>`);
+      } catch (error) {
+        console.error("Twilio voice turn failed:", error.message);
+        response.writeHead(200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-store" });
+        response.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Aditi" language="hi-IN">Maaf kijiye, main abhi jawab nahi de pa raha hoon. Kripya baad mein phir koshish kijiye.</Say></Response>`);
+      }
       return;
     }
 

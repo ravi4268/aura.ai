@@ -1,10 +1,18 @@
 const crypto = require("node:crypto");
-const { DEFAULT_GEMINI_MODEL, generateGeminiReply, getLocalGreetingReply } = require("../server/gemini");
+const {
+  DEFAULT_GEMINI_MODEL,
+  MAX_AUDIO_BYTES,
+  decodeAudioPayload,
+  generateGeminiReply,
+  getLocalGreetingReply,
+  transcribeGeminiAudio,
+} = require("../server/gemini");
 
 const SESSION_COOKIE = "aura_session";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_MESSAGE_LENGTH = 4000;
+const MAX_AUDIO_REQUEST_BYTES = Math.ceil(MAX_AUDIO_BYTES / 3) * 4 + 4096;
 
 function getPasswordHash(password) {
   const salt = crypto.createHash("sha256").update("auraAI:Sanidhya:v1").digest();
@@ -17,7 +25,6 @@ function parseBody(req) {
       resolve(req.body);
       return;
     }
-
     let rawBody = "";
     req.on("data", (chunk) => {
       rawBody += chunk;
@@ -27,6 +34,45 @@ function parseBody(req) {
         resolve(rawBody ? JSON.parse(rawBody) : {});
       } catch {
         reject(Object.assign(new Error("Request body must be valid JSON"), { statusCode: 400 }));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function parseAudioBody(req) {
+  if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
+    return Promise.resolve(req.body);
+  }
+  if (Buffer.isBuffer(req.body)) {
+    try {
+      return Promise.resolve(JSON.parse(req.body.toString("utf8")));
+    } catch {
+      return Promise.reject(Object.assign(new Error("Request body must be valid JSON."), { statusCode: 400 }));
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let tooLarge = false;
+    req.on("data", (chunk) => {
+      if (tooLarge) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > MAX_AUDIO_REQUEST_BYTES) {
+        tooLarge = true;
+        reject(Object.assign(new Error("Audio request is too large."), { statusCode: 413 }));
+        return;
+      }
+      chunks.push(buffer);
+    });
+    req.on("end", () => {
+      if (tooLarge) return;
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        reject(Object.assign(new Error("Request body must be valid JSON."), { statusCode: 400 }));
       }
     });
     req.on("error", reject);
@@ -252,6 +298,47 @@ async function handleChat(request, response) {
   }
 }
 
+async function handleAudioTranscription(request, response) {
+  if (request.method !== "POST") {
+    safeJson(response, 405, { error: "Method not allowed" }, { Allow: "POST" });
+    return;
+  }
+
+  const session = validateSignedInUser(request);
+  if (!session) {
+    safeJson(response, 401, { error: "Please sign in again before using voice chat." });
+    return;
+  }
+
+  if (!(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+    safeJson(response, 415, { error: "Content-Type must be application/json." });
+    return;
+  }
+
+  try {
+    const body = await parseAudioBody(request);
+    const { audio, mimeType } = decodeAudioPayload(body);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      safeJson(response, 503, { error: "AI is not configured. Add GEMINI_API_KEY to the server environment." });
+      return;
+    }
+
+    const transcript = await transcribeGeminiAudio({
+      apiKey,
+      model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+      audio,
+      mimeType,
+    });
+    safeJson(response, 200, { transcript });
+  } catch (error) {
+    if (error.providerStatus) console.error("Gemini transcription failed with status:", error.providerStatus);
+    safeJson(response, error.statusCode || 502, {
+      error: error.publicMessage || error.message || "Could not transcribe the audio. Please try again.",
+    });
+  }
+}
+
 module.exports = {
   SESSION_COOKIE,
   getPasswordHash,
@@ -264,4 +351,6 @@ module.exports = {
   safeJson,
   handleAuthentication,
   handleChat,
+  handleAudioTranscription,
+  validateSignedInUser,
 };

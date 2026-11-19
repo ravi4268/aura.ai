@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import App from "./App";
 
 let loggedIn;
@@ -45,6 +45,14 @@ beforeEach(() => {
       });
     }
 
+    if (url === "/api/call/start") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ callSid: "CA-test", status: "queued", to: "+919216393256" }),
+      });
+    }
+
     return Promise.reject(new Error(`Unexpected request: ${url}`));
   });
 });
@@ -70,6 +78,100 @@ test("shows the named login screen and signs in to the responsive AI landing scr
   expect(global.fetch).toHaveBeenCalledWith(
     "/api/auth/login",
     expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+  );
+});
+
+test("the browser voice call captures audio without native speech recognition and stops capture on mute/end", async () => {
+  const originalMediaRecorder = window.MediaRecorder;
+  const originalAudioContext = window.AudioContext;
+  const originalUtterance = window.SpeechSynthesisUtterance;
+  const originalSpeechSynthesis = window.speechSynthesis;
+  const originalMediaDevices = navigator.mediaDevices;
+  const audioTrack = { enabled: true, stop: jest.fn() };
+  const stream = { getAudioTracks: () => [audioTrack], getTracks: () => [audioTrack] };
+  class MockMediaRecorder {
+    static isTypeSupported = jest.fn(() => true);
+
+    constructor() {
+      this.state = "inactive";
+      this.mimeType = "audio/webm";
+    }
+
+    start() { this.state = "recording"; }
+    stop() {
+      this.state = "inactive";
+      if (this.onstop) this.onstop();
+    }
+  }
+  class MockAudioContext {
+    createAnalyser() {
+      return { fftSize: 2048, getByteTimeDomainData: (samples) => samples.fill(128) };
+    }
+    createMediaStreamSource() { return { connect: jest.fn() }; }
+    close = jest.fn(() => Promise.resolve());
+  }
+  class MockSpeechSynthesisUtterance {
+    constructor(text) {
+      this.text = text;
+    }
+  }
+  const speechSynthesis = { cancel: jest.fn(), speak: jest.fn() };
+  window.MediaRecorder = MockMediaRecorder;
+  window.AudioContext = MockAudioContext;
+  window.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
+  window.speechSynthesis = speechSynthesis;
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia: jest.fn().mockResolvedValue(stream) },
+  });
+  const { unmount } = render(<App />);
+
+  try {
+    await signIn();
+    fireEvent.click(screen.getByRole("button", { name: /start browser voice call with ai/i }));
+    expect(await screen.findByRole("dialog", { name: /live voice conversation/i })).toBeInTheDocument();
+    await screen.findByText("Listening");
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(global.fetch).not.toHaveBeenCalledWith("/api/call/start", expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: /mute microphone/i }));
+    expect(audioTrack.enabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /unmute microphone/i }));
+    expect(audioTrack.enabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /end live call/i }));
+    expect(audioTrack.stop).toHaveBeenCalledTimes(1);
+    expect(speechSynthesis.cancel).toHaveBeenCalled();
+  } finally {
+    unmount();
+    if (originalMediaRecorder === undefined) delete window.MediaRecorder;
+    else window.MediaRecorder = originalMediaRecorder;
+    if (originalAudioContext === undefined) delete window.AudioContext;
+    else window.AudioContext = originalAudioContext;
+    if (originalUtterance === undefined) delete window.SpeechSynthesisUtterance;
+    else window.SpeechSynthesisUtterance = originalUtterance;
+    if (originalSpeechSynthesis === undefined) delete window.speechSynthesis;
+    else window.speechSynthesis = originalSpeechSynthesis;
+    if (originalMediaDevices === undefined) delete navigator.mediaDevices;
+    else Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: originalMediaDevices });
+  }
+});
+
+test("the Twilio call button collects an international number and starts a phone call", async () => {
+  render(<App />);
+  await signIn();
+
+  fireEvent.click(screen.getByRole("button", { name: /call my phone with ai/i }));
+  expect(screen.getByText(/Indian mobile, use \+91 followed by all 10 mobile digits/i)).toBeInTheDocument();
+  expect(screen.getByLabelText("Phone number")).toHaveValue("+919216393256");
+  fireEvent.click(screen.getByRole("button", { name: "Call me" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(/call started to \+919216393256/i);
+  expect(global.fetch).toHaveBeenCalledWith(
+    "/api/call/start",
+    expect.objectContaining({
+      method: "POST",
+      credentials: "same-origin",
+      body: JSON.stringify({ to: "+919216393256" }),
+    }),
   );
 });
 
