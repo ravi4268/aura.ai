@@ -5,6 +5,7 @@ const { afterEach, test } = require("node:test");
 const { createAuthServer } = require("./index");
 const { createSignedSession, handleAudioTranscription } = require("../api/_auth");
 const loginHandler = require("../api/auth/login");
+const callStartHandler = require("../api/call/start");
 
 const servers = [];
 
@@ -154,8 +155,8 @@ test("login rate limits repeated incorrect passwords", async () => {
   assert.equal(rateLimitedResponse.status, 429);
 });
 
-test("phone calling reports missing Twilio configuration", async () => {
-  const baseUrl = await startServer({ twilioEnv: {} });
+test("phone calling reports missing Telnyx configuration", async () => {
+  const baseUrl = await startServer({ telnyxEnv: {} });
   const cookie = await signIn(baseUrl);
   const response = await fetch(`${baseUrl}/api/call/start`, {
     method: "POST",
@@ -164,16 +165,57 @@ test("phone calling reports missing Twilio configuration", async () => {
   });
 
   assert.equal(response.status, 503);
-  assert.match((await response.json()).error, /TWILIO_ACCOUNT_SID/);
+  assert.match((await response.json()).error, /TELNYX_API_KEY/);
 });
 
-test("phone calling explains that the Twilio caller ID must be a valid Twilio number", async () => {
+test("phone calling explains how to fix an invalid Call Control App webhook", async () => {
   const baseUrl = await startServer({
-    twilioEnv: {
-      TWILIO_ACCOUNT_SID: "AC-test",
-      TWILIO_AUTH_TOKEN: "test-auth-token",
-      TWILIO_FROM_NUMBER: "+92 1639",
-      PUBLIC_BASE_URL: "https://aura.example",
+    telnyxEnv: {
+      TELNYX_API_KEY: "test-api-key",
+      TELNYX_CONNECTION_ID: "connection-test",
+      TELNYX_AI_ASSISTANT_ID: "assistant-test",
+      TELNYX_FROM_NUMBER: "+15005550006",
+    },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        errors: [{
+          detail: "The requested connection_id (Call Control App ID) is either invalid or does not exist. Only Call Control Apps with valid webhook URL are accepted.",
+        }],
+      }),
+    }),
+  });
+  const cookie = await signIn(baseUrl);
+  const response = await fetch(`${baseUrl}/api/call/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ to: "+919876543210" }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /correct Call Control App ID.*public HTTPS endpoint.*\/api\/telnyx\/webhook/i);
+});
+
+test("Telnyx webhook acknowledges provider events without requiring a session", async () => {
+  const baseUrl = await startServer();
+  const response = await fetch(`${baseUrl}/api/telnyx/webhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: { event_type: "call.initiated" } }),
+  });
+
+  assert.equal(response.status, 204);
+  assert.equal(await response.text(), "");
+});
+
+test("phone calling requires a valid Telnyx caller ID", async () => {
+  const baseUrl = await startServer({
+    telnyxEnv: {
+      TELNYX_API_KEY: "test-api-key",
+      TELNYX_CONNECTION_ID: "connection-test",
+      TELNYX_AI_ASSISTANT_ID: "assistant-test",
+      TELNYX_FROM_NUMBER: "+92 1639",
     },
   });
   const cookie = await signIn(baseUrl);
@@ -185,22 +227,21 @@ test("phone calling explains that the Twilio caller ID must be a valid Twilio nu
 
   assert.equal(response.status, 503);
   const data = await response.json();
-  assert.match(data.error, /voice-enabled number from your Twilio account/i);
-  assert.match(data.error, /not the phone you want to call/i);
+  assert.match(data.error, /voice-enabled Telnyx phone number/i);
 });
 
-test("phone calling explains how to fix mismatched Twilio credentials", async () => {
+test("phone calling does not expose rejected Telnyx credentials", async () => {
   const baseUrl = await startServer({
-    twilioEnv: {
-      TWILIO_ACCOUNT_SID: "AC-test",
-      TWILIO_AUTH_TOKEN: "wrong-token",
-      TWILIO_FROM_NUMBER: "+15005550006",
-      PUBLIC_BASE_URL: "https://aura.example",
+    telnyxEnv: {
+      TELNYX_API_KEY: "wrong-api-key",
+      TELNYX_CONNECTION_ID: "connection-test",
+      TELNYX_AI_ASSISTANT_ID: "assistant-test",
+      TELNYX_FROM_NUMBER: "+15005550006",
     },
     fetchImpl: async () => ({
       ok: false,
       status: 401,
-      json: async () => ({ code: 20003, message: "Authentication failed" }),
+      json: async () => ({ errors: [{ code: "Unauthorized", detail: "Authentication failed" }] }),
     }),
   });
   const cookie = await signIn(baseUrl);
@@ -212,52 +253,50 @@ test("phone calling explains how to fix mismatched Twilio credentials", async ()
 
   assert.equal(response.status, 502);
   const data = await response.json();
-  assert.match(data.error, /error 20003/i);
-  assert.match(data.error, /matching pair/i);
-  assert.match(data.error, /restart or redeploy/i);
-  assert.doesNotMatch(data.error, /wrong-token/i);
+  assert.match(data.error, /authentication failed/i);
+  assert.doesNotMatch(data.error, /wrong-api-key/i);
 });
 
-test("phone calling rejects incomplete Pakistan mobile numbers before contacting Twilio", async () => {
-  let contactedTwilio = false;
+test("phone calling rejects invalid international numbers before contacting Telnyx", async () => {
+  let contactedTelnyx = false;
   const baseUrl = await startServer({
-    twilioEnv: {
-      TWILIO_ACCOUNT_SID: "AC-test",
-      TWILIO_AUTH_TOKEN: "test-auth-token",
-      TWILIO_FROM_NUMBER: "+15005550006",
-      PUBLIC_BASE_URL: "https://aura.example",
+    telnyxEnv: {
+      TELNYX_API_KEY: "test-api-key",
+      TELNYX_CONNECTION_ID: "connection-test",
+      TELNYX_AI_ASSISTANT_ID: "assistant-test",
+      TELNYX_FROM_NUMBER: "+15005550006",
     },
     fetchImpl: async () => {
-      contactedTwilio = true;
-      throw new Error("Unexpected Twilio request");
+      contactedTelnyx = true;
+      throw new Error("Unexpected Telnyx request");
     },
   });
   const cookie = await signIn(baseUrl);
   const response = await fetch(`${baseUrl}/api/call/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ to: "+9216393256" }),
+    body: JSON.stringify({ to: "+123" }),
   });
 
   assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /complete Pakistan mobile number/i);
-  assert.equal(contactedTwilio, false);
+  assert.match((await response.json()).error, /valid phone number in international format/i);
+  assert.equal(contactedTelnyx, false);
 });
 
-test("authenticated phone call uses configured Twilio credentials and public voice webhooks", async () => {
+test("authenticated phone call starts a Telnyx AI Assistant on the configured connection", async () => {
   let upstreamRequest;
   const baseUrl = await startServer({
-    twilioEnv: {
-      TWILIO_ACCOUNT_SID: "AC-test",
-      TWILIO_AUTH_TOKEN: "test-auth-token",
-      TWILIO_FROM_NUMBER: "+15005550006",
-      PUBLIC_BASE_URL: "https://aura.example",
+    telnyxEnv: {
+      TELNYX_API_KEY: "test-api-key",
+      TELNYX_CONNECTION_ID: "connection-test",
+      TELNYX_AI_ASSISTANT_ID: "assistant-test",
+      TELNYX_FROM_NUMBER: "+15005550006",
     },
     fetchImpl: async (url, options) => {
       upstreamRequest = { url, options };
       return {
         ok: true,
-        json: async () => ({ sid: "CA-test", status: "queued" }),
+        json: async () => ({ data: { call_control_id: "call-control-test", call_leg_id: "call-leg-test" } }),
       };
     },
   });
@@ -270,20 +309,93 @@ test("authenticated phone call uses configured Twilio credentials and public voi
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    callSid: "CA-test",
-    status: "queued",
+    callId: "call-control-test",
+    status: "initiated",
     to: "+919876543210",
   });
-  assert.equal(upstreamRequest.url, "https://api.twilio.com/2010-04-01/Accounts/AC-test/Calls.json");
-  assert.equal(
-    upstreamRequest.options.headers.Authorization,
-    `Basic ${Buffer.from("AC-test:test-auth-token").toString("base64")}`,
-  );
-  const twilioParams = new URLSearchParams(upstreamRequest.options.body);
-  assert.equal(twilioParams.get("To"), "+919876543210");
-  assert.equal(twilioParams.get("From"), "+15005550006");
-  assert.equal(twilioParams.get("Url"), "https://aura.example/api/voice/answer");
-  assert.equal(twilioParams.get("Record"), "false");
+  assert.equal(upstreamRequest.url, "https://api.telnyx.com/v2/calls");
+  assert.equal(upstreamRequest.options.headers.Authorization, `Bearer test-api-key`);
+  assert.deepEqual(JSON.parse(upstreamRequest.options.body), {
+    connection_id: "connection-test",
+    from: "+15005550006",
+    to: "+919876543210",
+    assistant: { id: "assistant-test" },
+  });
+});
+
+test("phone calling reports Telnyx connection, caller, or assistant configuration errors", async () => {
+  let contactedTelnyx = false;
+  const baseUrl = await startServer({
+    telnyxEnv: {
+      TELNYX_API_KEY: "test-api-key",
+      TELNYX_FROM_NUMBER: "+15005550006",
+    },
+    fetchImpl: async () => {
+      contactedTelnyx = true;
+      throw new Error("Unexpected Telnyx request");
+    },
+  });
+  const cookie = await signIn(baseUrl);
+  const response = await fetch(`${baseUrl}/api/call/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ to: "+919876543210" }),
+  });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /TELNYX_CONNECTION_ID.*TELNYX_AI_ASSISTANT_ID/i);
+  assert.equal(contactedTelnyx, false);
+});
+
+test("Vercel call handler starts the configured Telnyx AI Assistant", async () => {
+  const previousPassword = process.env.SANIDHYA_PASSWORD;
+  const previousApiKey = process.env.TELNYX_API_KEY;
+  const previousConnectionId = process.env.TELNYX_CONNECTION_ID;
+  const previousAssistantId = process.env.TELNYX_AI_ASSISTANT_ID;
+  const previousFromNumber = process.env.TELNYX_FROM_NUMBER;
+  const previousFetch = global.fetch;
+  process.env.SANIDHYA_PASSWORD = "correct-horse-battery";
+  process.env.TELNYX_API_KEY = "test-api-key";
+  process.env.TELNYX_CONNECTION_ID = "connection-test";
+  process.env.TELNYX_AI_ASSISTANT_ID = "assistant-test";
+  process.env.TELNYX_FROM_NUMBER = "+15005550006";
+  global.fetch = async (url, options) => {
+    assert.equal(url, "https://api.telnyx.com/v2/calls");
+    assert.equal(options.headers.Authorization, `Bearer test-api-key`);
+    return { ok: true, json: async () => ({ data: { call_control_id: "call-vercel-test" } }) };
+  };
+  const createResponse = () => ({
+    headers: {},
+    setHeader(name, value) { this.headers[name.toLowerCase()] = value; },
+    end(body) { this.body = body; },
+  });
+
+  try {
+    const cookie = `aura_session=${encodeURIComponent(createSignedSession({ name: "Sanidhya" }))}`;
+    const callResponse = createResponse();
+    await callStartHandler({
+      method: "POST",
+      headers: { cookie },
+      body: { to: "+919876543210" },
+    }, callResponse);
+    assert.equal(callResponse.statusCode, 200);
+    assert.deepEqual(JSON.parse(callResponse.body), {
+      callId: "call-vercel-test",
+      status: "initiated",
+      to: "+919876543210",
+    });
+  } finally {
+    if (previousPassword === undefined) delete process.env.SANIDHYA_PASSWORD;
+    else process.env.SANIDHYA_PASSWORD = previousPassword;
+    if (previousApiKey === undefined) delete process.env.TELNYX_API_KEY;
+    else process.env.TELNYX_API_KEY = previousApiKey;
+    if (previousConnectionId === undefined) delete process.env.TELNYX_CONNECTION_ID;
+    else process.env.TELNYX_CONNECTION_ID = previousConnectionId;
+    if (previousAssistantId === undefined) delete process.env.TELNYX_AI_ASSISTANT_ID;
+    else process.env.TELNYX_AI_ASSISTANT_ID = previousAssistantId;
+    if (previousFromNumber === undefined) delete process.env.TELNYX_FROM_NUMBER;
+    else process.env.TELNYX_FROM_NUMBER = previousFromNumber;
+    global.fetch = previousFetch;
+  }
 });
 
 test("authenticated chat forwards conversation history to Gemini", async () => {
@@ -341,14 +453,16 @@ test("greetings receive a reply without calling Gemini or requiring an API key",
   });
   const cookie = await signIn(baseUrl);
 
-  const response = await fetch(`${baseUrl}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
-  });
+  for (const greeting of ["hi", "हाय"]) {
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ messages: [{ role: "user", content: greeting }] }),
+    });
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { reply: "Hi! How can I help?" });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { reply: "Hi! How can I help?" });
+  }
 });
 
 test("chat rejects anonymous requests and reports missing Gemini configuration", async () => {

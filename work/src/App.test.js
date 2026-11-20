@@ -49,7 +49,7 @@ beforeEach(() => {
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ callSid: "CA-test", status: "queued", to: "+919216393256" }),
+        json: () => Promise.resolve({ callId: "request-test", status: "initiated", to: "+919876543210" }),
       });
     }
 
@@ -155,24 +155,65 @@ test("the browser voice call captures audio without native speech recognition an
   }
 });
 
-test("the Twilio call button collects an international number and starts a phone call", async () => {
-  render(<App />);
-  await signIn();
+test("the browser voice call recognizes and answers Hi without Gemini audio transcription", async () => {
+  const originalSpeechRecognition = window.SpeechRecognition;
+  const originalWebkitSpeechRecognition = window.webkitSpeechRecognition;
+  const originalUtterance = window.SpeechSynthesisUtterance;
+  const originalSpeechSynthesis = window.speechSynthesis;
+  let recognition;
+  class MockSpeechRecognition {
+    constructor() {
+      recognition = this;
+    }
 
-  fireEvent.click(screen.getByRole("button", { name: /call my phone with ai/i }));
-  expect(screen.getByText(/Indian mobile, use \+91 followed by all 10 mobile digits/i)).toBeInTheDocument();
-  expect(screen.getByLabelText("Phone number")).toHaveValue("+919216393256");
-  fireEvent.click(screen.getByRole("button", { name: "Call me" }));
+    start() {}
+    stop() {}
+  }
+  class MockSpeechSynthesisUtterance {
+    constructor(text) {
+      this.text = text;
+    }
+  }
+  const speechSynthesis = { cancel: jest.fn(), speak: jest.fn() };
+  window.SpeechRecognition = MockSpeechRecognition;
+  window.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
+  window.speechSynthesis = speechSynthesis;
+  const { unmount } = render(<App />);
 
-  expect(await screen.findByRole("status")).toHaveTextContent(/call started to \+919216393256/i);
-  expect(global.fetch).toHaveBeenCalledWith(
-    "/api/call/start",
-    expect.objectContaining({
-      method: "POST",
-      credentials: "same-origin",
-      body: JSON.stringify({ to: "+919216393256" }),
-    }),
-  );
+  try {
+    await signIn();
+    fireEvent.click(screen.getByRole("button", { name: /start browser voice call with ai/i }));
+    await screen.findByText("Listening");
+    act(() => {
+      const finalResult = [{ transcript: "hi" }];
+      finalResult.isFinal = true;
+      recognition.onresult({
+        resultIndex: 0,
+        results: [finalResult],
+      });
+    });
+
+    await screen.findByText("AI speaking");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/chat",
+      expect.objectContaining({
+        body: JSON.stringify({ messages: [{ role: "user", content: "hi" }] }),
+      }),
+    );
+    expect(global.fetch).not.toHaveBeenCalledWith("/api/voice/transcribe", expect.anything());
+    expect(speechSynthesis.speak).toHaveBeenCalledWith(expect.objectContaining({ text: "Hello! How can I help?" }));
+    fireEvent.click(screen.getByRole("button", { name: /end live call/i }));
+  } finally {
+    unmount();
+    if (originalSpeechRecognition === undefined) delete window.SpeechRecognition;
+    else window.SpeechRecognition = originalSpeechRecognition;
+    if (originalWebkitSpeechRecognition === undefined) delete window.webkitSpeechRecognition;
+    else window.webkitSpeechRecognition = originalWebkitSpeechRecognition;
+    if (originalUtterance === undefined) delete window.SpeechSynthesisUtterance;
+    else window.SpeechSynthesisUtterance = originalUtterance;
+    if (originalSpeechSynthesis === undefined) delete window.speechSynthesis;
+    else window.speechSynthesis = originalSpeechSynthesis;
+  }
 });
 
 test("replies to Hi and includes earlier turns in follow-up requests", async () => {

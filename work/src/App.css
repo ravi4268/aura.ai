@@ -1826,28 +1826,6 @@
 .android-install-banner strong { font-size: 12px; }
 .android-install-banner small { color: #aaa3b3; font-size: 10px; }
 .android-install-action { color: #c4a8f0; font-size: 11px; font-weight: 700; }
-
-.phone-call-button {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  color: #b8b1c0;
-  background: #29272d;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  place-items: center;
-}
-.phone-call-button:hover { color: #17121d; background: #c4a8f0; }
-.phone-call-button svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.7;
-}
 .live-call-button {
   display: grid;
   width: 30px;
@@ -1869,18 +1847,6 @@
   stroke-linejoin: round;
   stroke-width: 1.7;
 }
-.call-phone-input {
-  min-height: 44px;
-  padding: 0 12px;
-}
-.phone-call-success,
-.phone-call-note {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.phone-call-success { color: #a9d6b7; }
-.phone-call-note { margin-top: 16px; color: #a79f97; }
 .dialog-submit:disabled { cursor: not-allowed; opacity: 0.65; }
 .live-call-backdrop {
   position: fixed;

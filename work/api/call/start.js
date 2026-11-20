@@ -1,5 +1,5 @@
 const { validateSignedInUser, parseBody, safeJson } = require("../_auth");
-const { createTwilioCall } = require("../../server/twilio");
+const { createTelnyxCall } = require("../../server/telnyx");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") {
@@ -18,7 +18,7 @@ module.exports = async function handler(request, response) {
   }
 
   try {
-    const call = await createTwilioCall(body?.to);
+    const call = await createTelnyxCall(body?.to);
     safeJson(response, 200, call);
   } catch (error) {
     safeJson(response, error.statusCode || 502, { error: error.message || "Could not start the phone call." });

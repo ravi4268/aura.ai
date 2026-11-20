@@ -16,7 +16,7 @@ const SYSTEM_INSTRUCTION =
 
 function getLocalGreetingReply(messages) {
   const lastMessage = messages[messages.length - 1];
-  if (/^(hi|hello|hey)[!.?]*$/i.test(lastMessage.content.trim())) {
+  if (/^(hi|hello|hey|हाय|हेलो|नमस्ते|नमस्कार)[!.?।]*$/i.test(lastMessage.content.trim())) {
     return "Hi! How can I help?";
   }
   return null;

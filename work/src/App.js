@@ -92,11 +92,6 @@ function App() {
   const [generatedOtp, setGeneratedOtp] = useState("");
   const [subscriptionError, setSubscriptionError] = useState("");
   const [subscriptionSuccess, setSubscriptionSuccess] = useState("");
-  const [isPhoneCallOpen, setIsPhoneCallOpen] = useState(false);
-  const [callPhoneNumber, setCallPhoneNumber] = useState("");
-  const [isStartingPhoneCall, setIsStartingPhoneCall] = useState(false);
-  const [phoneCallStatus, setPhoneCallStatus] = useState("");
-  const [phoneCallError, setPhoneCallError] = useState("");
   const [projects, setProjects] = useState(initialProjects);
   const [user, setUser] = useState(null);
   const [authStatus, setAuthStatus] = useState("checking");
@@ -109,6 +104,7 @@ function App() {
   const [liveTranscript, setLiveTranscript] = useState("");
   const [liveError, setLiveError] = useState("");
   const mediaStreamRef = useRef(null);
+  const speechRecognitionRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioContextRef = useRef(null);
   const audioAnalyserRef = useRef(null);
@@ -171,6 +167,13 @@ function App() {
     isSpeakingRef.current = false;
     if (audioMonitorRef.current) window.clearInterval(audioMonitorRef.current);
     if (audioUploadControllerRef.current) audioUploadControllerRef.current.abort();
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.onresult = null;
+      speechRecognitionRef.current.onend = null;
+      speechRecognitionRef.current.onerror = null;
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.discardAudio = true;
       mediaRecorderRef.current.stop();
@@ -253,9 +256,20 @@ function App() {
       mutedRef.current ||
       isSpeakingRef.current ||
       isSendingRef.current ||
-      isTranscribingRef.current ||
-      !mediaStreamRef.current
+      isTranscribingRef.current
     ) return;
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.start();
+        setIsListening(true);
+      } catch (error) {
+        if (error.name !== "InvalidStateError") {
+          setLiveError("Could not start speech recognition. Check your microphone permission and try again.");
+        }
+      }
+      return;
+    }
+    if (!mediaStreamRef.current) return;
     mediaStreamRef.current.getAudioTracks().forEach((track) => { track.enabled = true; });
     setIsListening(true);
   };
@@ -386,6 +400,7 @@ function App() {
     isSpeakingRef.current = true;
     setIsSpeaking(true);
     setIsListening(false);
+    if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
     if (mediaStreamRef.current) mediaStreamRef.current.getAudioTracks().forEach((track) => { track.enabled = false; });
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = LIVE_VOICE_LANGUAGE;
@@ -586,6 +601,13 @@ function App() {
       wakeLockRef.current.release().catch(() => {});
       wakeLockRef.current = null;
     }
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.onresult = null;
+      speechRecognitionRef.current.onend = null;
+      speechRecognitionRef.current.onerror = null;
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
     setIsLiveCall(false);
   };
 
@@ -595,7 +617,11 @@ function App() {
       setIsLiveCall(true);
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== "function") {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (
+      typeof SpeechRecognition !== "function" &&
+      (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== "function")
+    ) {
       setLiveError("Microphone recording is not supported in this browser. Try a current version of Chrome or Edge.");
       setIsLiveCall(true);
       return;
@@ -607,6 +633,47 @@ function App() {
     setIsLiveCall(true);
     if ("wakeLock" in navigator) {
       navigator.wakeLock.request("screen").then((lock) => { wakeLockRef.current = lock; }).catch(() => {});
+    }
+
+    if (typeof SpeechRecognition === "function") {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.lang = LIVE_VOICE_LANGUAGE;
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .slice(event.resultIndex)
+            .filter((result) => result.isFinal)
+            .map((result) => result[0]?.transcript || "")
+            .join(" ")
+            .trim();
+          if (!transcript) return;
+          setIsListening(false);
+          recognition.stop();
+          sendVoiceMessage(transcript);
+        };
+        recognition.onerror = (event) => {
+          if (liveCallRef.current && !mutedRef.current && event.error !== "no-speech" && event.error !== "aborted") {
+            setLiveError(event.error === "not-allowed"
+              ? "Microphone access was blocked. Allow microphone access in your browser and try again."
+              : "Speech recognition failed. Check your microphone permission and try again.");
+          }
+          setIsListening(false);
+        };
+        recognition.onend = () => {
+          if (liveCallRef.current && !mutedRef.current && !isSpeakingRef.current && !isSendingRef.current) {
+            startListening();
+          }
+        };
+        speechRecognitionRef.current = recognition;
+        startListening();
+        return;
+      } catch (error) {
+        setLiveError(error.message || "Could not start speech recognition. Check your microphone permission and try again.");
+        setIsListening(false);
+        return;
+      }
     }
 
     try {
@@ -648,6 +715,7 @@ function App() {
     setIsMuted(nextMuted);
     if (nextMuted) {
       stopCurrentRecording(true);
+      if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
       if (audioUploadControllerRef.current) {
         audioUploadControllerRef.current.abort();
         audioUploadControllerRef.current = null;
@@ -658,45 +726,6 @@ function App() {
     } else {
       setLiveError("");
       startListening();
-    }
-  };
-
-  const openPhoneCallDialog = () => {
-    setCallPhoneNumber("+919216393256");
-    setPhoneCallStatus("");
-    setPhoneCallError("");
-    setIsPhoneCallOpen(true);
-  };
-
-  const startPhoneCall = async (event) => {
-    event.preventDefault();
-    const to = callPhoneNumber.replace(/[\s()-]/g, "");
-    if (!/^\+[1-9]\d{7,14}$/.test(to)) {
-      setPhoneCallError("Enter the full number with country code, for example +919876543210.");
-      return;
-    }
-
-    setIsStartingPhoneCall(true);
-    setPhoneCallError("");
-    try {
-      const response = await fetch("/api/call/start", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to }),
-      });
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error("The call service returned an invalid response.");
-      }
-      if (!response.ok) throw new Error(data.error || "Could not start the phone call.");
-      setPhoneCallStatus(`Call started to ${data.to} (${data.status || "initiated"}). Answer your phone to talk with auraAI.`);
-    } catch (error) {
-      setPhoneCallError(error.message || "Could not start the phone call.");
-    } finally {
-      setIsStartingPhoneCall(false);
     }
   };
 
@@ -743,11 +772,8 @@ function App() {
           {isConversation ? "Press Enter to send" : "Curious by nature. Ready when you are."}
         </span>
         <span className="prompt-actions">
-          <button className="phone-call-button" type="button" aria-label="Call my phone with AI" onClick={openPhoneCallDialog}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h3l1.5 5-2 1.5c1.2 2.5 3.2 4.5 5.7 5.7l1.8-2 4 1.8v3c0 1.1-.9 2-2 2C10.7 20 4 13.3 4 5c0-1.1.9-2 2-2Z" /></svg>
-          </button>
           <button className="live-call-button" type="button" aria-label="Start browser voice call with AI" onClick={startLiveCall}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3.5 10 8l-2 2c1.5 3.1 3 4.6 6 6l2-2 4.5 2.5v3c0 1-1 2-2 2C10 21 3 14 2.5 6c0-1 1-2 2-2h3Z" /></svg>
           </button>
           <button className="send-button" type="submit" aria-label="Send message" disabled={!prompt.trim() || isSending}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -793,42 +819,6 @@ function App() {
           <span><strong>Install auraAI</strong><small>Add it to your Android home screen</small></span>
           <span className="android-install-action">Install</span>
         </button>
-      )}
-      {isPhoneCallOpen && (
-        <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !isStartingPhoneCall) setIsPhoneCallOpen(false);
-        }}>
-          <section className="subscription-dialog" role="dialog" aria-modal="true" aria-labelledby="phone-call-title">
-            <button className="dialog-close" type="button" aria-label="Close call dialog" onClick={() => setIsPhoneCallOpen(false)}>×</button>
-            <div className="page-eyebrow">TWILIO PHONE CALL</div>
-            <h2 id="phone-call-title">Call your phone with auraAI</h2>
-            <p className="page-description">Enter your full mobile number, including the country code. For an Indian mobile, use +91 followed by all 10 mobile digits (for example, +919876543210). This is the number auraAI will call; the Twilio caller ID is configured separately by the app owner.</p>
-            <form onSubmit={startPhoneCall}>
-              <label htmlFor="call-phone-number">Phone number</label>
-              <input
-                id="call-phone-number"
-                className="dialog-input call-phone-input"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                placeholder="+919876543210"
-                value={callPhoneNumber}
-                onChange={(event) => {
-                  setCallPhoneNumber(event.target.value);
-                  setPhoneCallError("");
-                  setPhoneCallStatus("");
-                }}
-                required
-              />
-              {phoneCallError && <p className="dialog-error" role="alert">{phoneCallError}</p>}
-              {phoneCallStatus && <p className="phone-call-success" role="status">{phoneCallStatus}</p>}
-              <button className="dialog-submit" type="submit" disabled={isStartingPhoneCall || Boolean(phoneCallStatus)}>
-                {isStartingPhoneCall ? "Starting call..." : phoneCallStatus ? "Call started" : "Call me"}
-              </button>
-            </form>
-            <p className="phone-call-note">Your Twilio account may charge for the call. Trial accounts can call only verified numbers.</p>
-          </section>
-        </div>
       )}
       {sidebarOpen && (
         <button

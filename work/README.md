@@ -10,13 +10,13 @@ This app is ready for Vercel deployment. In the Vercel Project Settings > Enviro
 SANIDHYA_PASSWORD=1234
 GEMINI_API_KEY=your_google_ai_studio_api_key
 GEMINI_MODEL=gemini-3.8-flash
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_FROM_NUMBER=+1xxxxxxxxxx
-PUBLIC_BASE_URL=https://your-public-domain.example
+TELNYX_API_KEY=your_telnyx_api_key
+TELNYX_CONNECTION_ID=your_telnyx_voice_api_connection_id
+TELNYX_AI_ASSISTANT_ID=your_telnyx_ai_assistant_id
+TELNYX_FROM_NUMBER=+1xxxxxxxxxx
 ```
 
-Set the Vercel project Root Directory to `work` (the folder containing this `package.json`), then redeploy. Add the Twilio values and `GEMINI_API_KEY` in Vercel Project Settings > Environment Variables for each environment you deploy (Production, Preview, or Development). A local `.env` file is ignored by Git and is not copied to Vercel. Redeploy after changing environment variables. `TWILIO_FROM_NUMBER` must be a voice-enabled Twilio number in E.164 format (for example `+14155552671`). `PUBLIC_BASE_URL` should be your deployed HTTPS domain; if omitted, the app uses Vercel's `VERCEL_URL`. Vercel detects the `api/` serverless functions automatically; `vercel.json` only provides the client-side route fallback.
+Set the Vercel project Root Directory to `work` (the folder containing this `package.json`), then redeploy. Add the Telnyx values and `GEMINI_API_KEY` in Vercel Project Settings > Environment Variables for each environment you deploy (Production, Preview, or Development). A local `.env` file is ignored by Git and is not copied to Vercel. Redeploy after changing environment variables. Buy or configure a voice-enabled Telnyx number and attach it to a Call Control App. Set the app's public webhook URL to `https://<your-deployed-domain>/api/telnyx/webhook`, then set that app's ID as `TELNYX_CONNECTION_ID`. Create and configure a Telnyx AI Assistant, then set its ID as `TELNYX_AI_ASSISTANT_ID`. The webhook endpoint acknowledges Telnyx call events; Telnyx starts the configured assistant automatically when the called party answers. Vercel detects the `api/` serverless functions automatically; `vercel.json` only provides the client-side route fallback.
 
 The application expects the password to be set in the deployment environment for login to work. The frontend is served from the `build` folder and the `/api/*` routes are handled by the files in the `api/` folder.
 
@@ -26,21 +26,21 @@ Use Node.js 18 or newer. Put your Google AI Studio API key in the ignored `.env`
 
 ```env
 GEMINI_API_KEY=your_google_ai_studio_api_key
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_FROM_NUMBER=+1xxxxxxxxxx
-PUBLIC_BASE_URL=https://your-public-tunnel.example
+TELNYX_API_KEY=your_telnyx_api_key
+TELNYX_CONNECTION_ID=your_telnyx_voice_api_connection_id
+TELNYX_AI_ASSISTANT_ID=your_telnyx_ai_assistant_id
+TELNYX_FROM_NUMBER=+1xxxxxxxxxx
 ```
 
-The backend loads this file automatically. Keep real credentials only in the ignored `.env` file or hosting-provider secret settings; never put them in React code or commit them. For local phone calls, run a public HTTPS tunnel such as `ngrok http 5001`, then set `PUBLIC_BASE_URL` to the HTTPS URL it prints. The tunnel must forward to the local backend (port 5001); `localhost` is not reachable by Twilio.
+The backend loads this file automatically. Keep real credentials only in the ignored `.env` file or hosting-provider secret settings; never put them in React code or commit them.
 
 Sending `hi`, `hello`, or `hey` gets a quick greeting without using Gemini quota. Other messages are sent to Gemini and need an active `GEMINI_API_KEY`.
 
-Click the microphone button beside the message box to start a live browser voice conversation with auraAI. Allow microphone access; short audio recordings (up to 20 seconds and 2 MB per utterance) are sent to the signed-in server endpoint and transcribed by Gemini. The browser speaks the AI replies in Hindi. This uses the browser microphone and speaker but not browser-native speech recognition or Twilio, and does not make a phone call. Microphone access requires localhost or an HTTPS deployment. Muting or ending the call stops capture and cancels any pending transcription upload.
+Click the phone button beside the message box to start a live browser voice conversation with auraAI. Allow microphone access. Supported browsers use built-in speech recognition; other browsers send short recordings (up to 20 seconds and 2 MB per utterance) to the signed-in server for Gemini transcription. Simple greetings such as "hi" receive a local reply without Gemini. Other AI answers require a valid `GEMINI_API_KEY`. The browser speaks replies in Hindi. This uses the browser microphone and speaker, not Telnyx, and does not call an external phone number. Microphone access requires localhost or an HTTPS deployment. Muting or ending the call stops capture and cancels any pending transcription upload.
 
-Click the phone button beside the message box and enter a full international number (for example `+919876543210`) to have Twilio call that phone. Answer the call to talk with auraAI in Hindi. This separate phone-call feature requires valid matching Twilio credentials; the browser voice conversation still works without them. Twilio trial accounts can call only verified destination numbers; calls may incur charges.
+Telnyx configuration is optional and is only needed if you use the server's `POST /api/call/start` endpoint to place an external phone call. It is not required for browser voice conversations.
 
-In the Twilio Console, copy the Account SID and its matching Auth Token into the server environment and use a voice-enabled Twilio phone number for `TWILIO_FROM_NUMBER`. This is the Twilio caller ID, not the personal destination number entered in the call dialog. If Twilio returns error 20003, verify that `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are from the same account; copy or regenerate that account's Auth Token, replace the server environment value, then restart the local server or redeploy. Do not share or commit the Auth Token. Enter the destination in full international format; Indian mobile numbers use `+91` followed by all 10 mobile digits (for example `+919876543210`). Outbound calls use the app's voice webhook automatically. To also receive calls on your Twilio number, open that number's Voice Configuration and set "A call comes in" to `https://your-public-domain.example/api/voice/answer` with HTTP POST. Make sure `GEMINI_API_KEY` is also configured in the server environment so auraAI can generate spoken replies.
+In Telnyx Mission Control, create an API key, a Call Control App, and an AI Assistant, and purchase or assign a voice-enabled Telnyx number to the app. Set the app's webhook URL to `https://<your-deployed-domain>/api/telnyx/webhook` (Telnyx must be able to reach it over HTTPS), then set the app's ID as `TELNYX_CONNECTION_ID`. Set the API key as `TELNYX_API_KEY`, the assistant's ID as `TELNYX_AI_ASSISTANT_ID`, and the caller number in E.164 format as `TELNYX_FROM_NUMBER`. The caller ID is separate from the destination number entered in the call dialog. Keep API keys private; never share or commit them. Enter the destination in full international format; Indian mobile numbers use `+91` followed by all 10 mobile digits (for example `+919876543210`). Configure the Telnyx AI Assistant's model and instructions in Mission Control; phone call answers are generated by that assistant. A local `localhost` URL cannot be used for Telnyx webhooks; deploy the app first and use its public HTTPS domain.
 
 In PowerShell terminal 1, set the account password and start the API:
 
@@ -71,6 +71,8 @@ The API requires a password of at least four characters. Sessions use an HttpOnl
 - `POST /api/auth/login` — accepts JSON `{ "password": "..." }`.
 - `POST /api/auth/logout` — invalidates the current session.
 - `POST /api/chat` — accepts the signed-in conversation as `{ "messages": [{ "role": "user" | "assistant", "content": "..." }] }` and returns `{ "reply": "..." }`.
+- `POST /api/call/start` — starts an authenticated Telnyx call with the configured AI Assistant.
+- `POST /api/telnyx/webhook` — acknowledges Telnyx Call Control events.
 - `POST /api/voice/transcribe` — accepts signed-in audio as `{ "audioBase64": "...", "mimeType": "audio/webm", "durationMs": 1200 }` and returns `{ "transcript": "..." }`. Audio is limited to 2 MB and 20 seconds; the Gemini API key remains server-side.
 
 Run the API tests with `npm run test:server`. Run the frontend tests with `npm test -- --watchAll=false`.
