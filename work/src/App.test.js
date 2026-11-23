@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 
 let loggedIn;
@@ -258,6 +258,36 @@ test("replies to Hi and includes earlier turns in follow-up requests", async () 
   expect(screen.getByText("hi", { selector: ".message-row-user p" })).toBeInTheDocument();
   expect(screen.getByText("Hi!")).toBeInTheDocument();
 });
+
+test("keeps every conversation message visible while limiting AI context to the latest 20 messages", async () => {
+  render(<App />);
+  await signIn();
+
+  for (let turn = 1; turn <= 11; turn += 1) {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ reply: `AI reply ${turn}` }),
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message ai/i }), {
+      target: { value: `User message ${turn}` },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(await screen.findByText(`AI reply ${turn}`)).toBeInTheDocument();
+  }
+
+  expect(document.querySelectorAll(".message-row-user p")).toHaveLength(11);
+  expect(document.querySelectorAll(".message-row-assistant p")).toHaveLength(11);
+  expect(screen.getByText("User message 1", { selector: ".message-row-user p" })).toBeInTheDocument();
+
+  const chatRequests = global.fetch.mock.calls.filter(([url]) => url === "/api/chat");
+  const lastRequest = chatRequests[chatRequests.length - 1];
+  const { messages: requestMessages } = JSON.parse(lastRequest[1].body);
+  expect(requestMessages).toHaveLength(20);
+  expect(requestMessages[requestMessages.length - 1]).toEqual({ role: "user", content: "User message 11" });
+}, 20000);
 
 test("New chat shows the full welcome screen and starts a fresh AI conversation", async () => {
   render(<App />);

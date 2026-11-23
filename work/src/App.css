@@ -749,6 +749,14 @@
   padding-bottom: 32px;
 }
 
+.conversation-messages {
+  max-height: calc(100vh - 245px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #3b3740 transparent;
+}
+
 .message-row {
   align-items: flex-start;
   gap: 12px;
@@ -1972,5 +1980,26 @@
     right: 10px;
     bottom: 10px;
     width: calc(100vw - 20px);
+  }
+
+  .live-call-card {
+    width: calc(100vw - 24px);
+    min-height: 0;
+    padding: 20px 16px;
+  }
+
+  .live-orb {
+    width: 128px;
+    height: 128px;
+    margin: 38px auto 22px;
+  }
+
+  .live-transcript,
+  .live-call-error {
+    min-height: 38px;
+  }
+
+  .conversation-messages {
+    max-height: calc(100dvh - 220px);
   }
 }

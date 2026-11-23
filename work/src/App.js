@@ -10,6 +10,7 @@ const recentChats = [
 ];
 
 const LIVE_VOICE_LANGUAGE = "hi-IN";
+const MAX_CHAT_CONTEXT_MESSAGES = 20;
 
 const aiTools = [
   { title: "Writing assistant", description: "Draft, rewrite, and polish your words.", prompt: "Help me write something great", icon: "Aa" },
@@ -80,6 +81,7 @@ function App() {
   const [chatError, setChatError] = useState("");
   const chatRequestId = useRef(0);
   const messagesRef = useRef([]);
+  const messagesEndRef = useRef(null);
   const isSendingRef = useRef(false);
   const wakeLockRef = useRef(null);
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -120,6 +122,10 @@ function App() {
 
   useEffect(() => {
     messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [messages]);
 
   useEffect(() => {
@@ -400,6 +406,7 @@ function App() {
     isSpeakingRef.current = true;
     setIsSpeaking(true);
     setIsListening(false);
+    setLiveTranscript(`AI: ${text}`);
     if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
     if (mediaStreamRef.current) mediaStreamRef.current.getAudioTracks().forEach((track) => { track.enabled = false; });
     const utterance = new SpeechSynthesisUtterance(text);
@@ -429,7 +436,7 @@ function App() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: conversationMessages }),
+        body: JSON.stringify({ messages: conversationMessages.slice(-MAX_CHAT_CONTEXT_MESSAGES) }),
       });
       let data;
       try {
@@ -561,7 +568,7 @@ function App() {
     const requestId = chatRequestId.current + 1;
     chatRequestId.current = requestId;
     const userMessage = { role: "user", content: cleanText };
-    const conversationMessages = [...messagesRef.current, userMessage].slice(-20);
+    const conversationMessages = [...messagesRef.current, userMessage];
     messagesRef.current = conversationMessages;
     setMessages(conversationMessages);
     setLiveTranscript(`You: ${cleanText}`);
@@ -640,18 +647,26 @@ function App() {
         const recognition = new SpeechRecognition();
         recognition.lang = LIVE_VOICE_LANGUAGE;
         recognition.continuous = true;
-        recognition.interimResults = false;
+        recognition.interimResults = true;
         recognition.onresult = (event) => {
-          const transcript = Array.from(event.results)
+          const finalTranscript = Array.from(event.results)
             .slice(event.resultIndex)
             .filter((result) => result.isFinal)
             .map((result) => result[0]?.transcript || "")
             .join(" ")
             .trim();
-          if (!transcript) return;
+          const interimTranscript = Array.from(event.results)
+            .slice(event.resultIndex)
+            .filter((result) => !result.isFinal)
+            .map((result) => result[0]?.transcript || "")
+            .join(" ")
+            .trim();
+          if (interimTranscript) setLiveTranscript(`You: ${interimTranscript}`);
+          if (!finalTranscript) return;
+          setLiveTranscript(`You: ${finalTranscript}`);
           setIsListening(false);
           recognition.stop();
-          sendVoiceMessage(transcript);
+          sendVoiceMessage(finalTranscript);
         };
         recognition.onerror = (event) => {
           if (liveCallRef.current && !mutedRef.current && event.error !== "no-speech" && event.error !== "aborted") {
@@ -736,7 +751,8 @@ function App() {
     const requestId = chatRequestId.current + 1;
     chatRequestId.current = requestId;
     const userMessage = { role: "user", content: text };
-    const conversationMessages = [...messages, userMessage].slice(-20);
+    const conversationMessages = [...messagesRef.current, userMessage];
+    messagesRef.current = conversationMessages;
     setMessages(conversationMessages);
     setPrompt("");
     if (activeChat === "New chat") setActiveChat(text.slice(0, 40));
@@ -773,7 +789,7 @@ function App() {
         </span>
         <span className="prompt-actions">
           <button className="live-call-button" type="button" aria-label="Start browser voice call with AI" onClick={startLiveCall}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3.5 10 8l-2 2c1.5 3.1 3 4.6 6 6l2-2 4.5 2.5v3c0 1-1 2-2 2C10 21 3 14 2.5 6c0-1 1-2 2-2h3Z" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8" /></svg>
           </button>
           <button className="send-button" type="submit" aria-label="Send message" disabled={!prompt.trim() || isSending}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1005,6 +1021,7 @@ function App() {
                     <p>{message.content}</p>
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
               {isSending && (
                 <div className="assistant-note" role="status">
