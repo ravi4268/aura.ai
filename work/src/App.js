@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 import Login from "./components/Login";
 import Topbar from "./components/Topbar";
+import Calling from "./pages/Calling";
 
 const recentChats = [
   "Ideas for a weekend trip",
@@ -11,6 +12,7 @@ const recentChats = [
 
 const LIVE_VOICE_LANGUAGE = "hi-IN";
 const MAX_CHAT_CONTEXT_MESSAGES = 20;
+const USER_PHONE_NUMBER = "+91 92163 93256";
 
 const aiTools = [
   { title: "Writing assistant", description: "Draft, rewrite, and polish your words.", prompt: "Help me write something great", icon: "Aa" },
@@ -406,7 +408,7 @@ function App() {
     isSpeakingRef.current = true;
     setIsSpeaking(true);
     setIsListening(false);
-    setLiveTranscript(`AI: ${text}`);
+    setLiveTranscript(`Aura.ai: ${text}`);
     if (speechRecognitionRef.current) speechRecognitionRef.current.stop();
     if (mediaStreamRef.current) mediaStreamRef.current.getAudioTracks().forEach((track) => { track.enabled = false; });
     const utterance = new SpeechSynthesisUtterance(text);
@@ -792,9 +794,9 @@ function App() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8" /></svg>
           </button>
           <button className="send-button" type="submit" aria-label="Send message" disabled={!prompt.trim() || isSending}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 19V5m-6 6 6-6 6 6" />
-          </svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 19V5m-6 6 6-6 6 6" />
+            </svg>
           </button>
         </span>
       </div>
@@ -836,254 +838,271 @@ function App() {
           <span className="android-install-action">Install</span>
         </button>
       )}
+
       {sidebarOpen && (
         <button
-          className="sidebar-backdrop"
           type="button"
+          className="sidebar-backdrop"
           aria-label="Close sidebar"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
-        <div className="sidebar-brand">
-          <SparkleMark />
-          <span className="brand-name">aura<span>AI</span></span>
-          <button className="icon-button sidebar-close-button" type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+      <aside className={`sidebar${sidebarOpen ? " open" : ""}`}>
+        <div className="sidebar-top">
+          <div className="brand">
+            <SparkleMark />
+            <span className="brand-name">auraAI</span>
+          </div>
+          <button
+            type="button"
+            className="new-chat-btn"
+            onClick={startNewChat}
+          >
+            + New chat
           </button>
         </div>
 
-        <button className="new-chat-button" type="button" onClick={startNewChat}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-          <span>New chat</span>
-          <span className="shortcut">⌘ K</span>
-        </button>
-
-        <nav className="sidebar-nav" aria-label="Main navigation">
-          <span className="sidebar-label">WORKSPACE</span>
-          <button className={`nav-item${activeSection === "Chats" ? " nav-item-active" : ""}`} type="button" onClick={() => selectSection("Chats")}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 3V5Z" /><path d="M8 9h8M8 12h5" /></svg>
-            <span>Chats</span><span className="nav-count">3</span>
-          </button>
-          <button className={`nav-item${activeSection === "Explore AI" ? " nav-item-active" : ""}`} type="button" onClick={() => selectSection("Explore AI")}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.3 5.7L20 11l-5.7 2.3L12 19l-2.3-5.7L4 11l5.7-2.3L12 3Z" /><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z" /></svg>
-            <span>Explore AI</span>
-          </button>
-          <button className={`nav-item${activeSection === "Library" ? " nav-item-active" : ""}`} type="button" onClick={() => selectSection("Library")}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg>
-            <span>Library</span>
-          </button>
+        <nav className="sidebar-nav" aria-label="Sections">
+          {["Chats", "Calling", "AI Tools", "Projects", "Subscription"].map((section) => (
+            <button
+              key={section}
+              type="button"
+              className={`nav-item${activeSection === section ? " active" : ""}`}
+              onClick={() => selectSection(section)}
+            >
+              {section}
+            </button>
+          ))}
         </nav>
 
-        <div className="recent-section">
-          <div className="recent-heading">
-            <span className="sidebar-label">RECENT</span>
-            <button className="subtle-icon-button" type="button" aria-label="More recent chats">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
-            </button>
-          </div>
-          {recentChats.map((chat, index) => (
+        <div className="sidebar-section-label">Recent</div>
+        <div className="recent-list">
+          {recentChats.map((chatTitle) => (
             <button
-              className={`recent-chat${activeChat === chat ? " recent-chat-active" : ""}`}
+              key={chatTitle}
               type="button"
-              onClick={() => openChat(chat)}
-              key={chat}
+              className={`recent-item${activeChat === chatTitle && activeSection === "Chats" ? " active" : ""}`}
+              onClick={() => openChat(chatTitle)}
             >
-              <span className={`recent-chat-dot recent-chat-dot-${["violet", "peach", "green"][index]}`} />
-              <span>{chat}</span>
+              {chatTitle}
             </button>
           ))}
         </div>
 
-        <div className="sidebar-bottom">
-          <button className="plan-card" type="button" onClick={() => selectSection("Plans")}>
-            <span className="plan-card-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="m12 3 2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5L12 3Z" /></svg>
-            </span>
-            <div><strong>Make more with AI</strong><p>Explore what’s possible.</p></div>
-            <svg className="plan-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
-          </button>
-          <button className="profile-button" type="button">
-            <span className="avatar">S</span>
-            <span className="profile-copy"><strong>{user.name}</strong><span>{currentPlan} plan</span></span>
-            <svg className="profile-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>
+        <div className="sidebar-footer">
+          <div className="user-chip">
+            <span>{user.name}</span>
+            <small>{USER_PHONE_NUMBER}</small>
+          </div>
+          {logoutError && <p className="error-text">{logoutError}</p>}
+          <button type="button" className="logout-btn" onClick={handleLogout}>
+            Sign out
           </button>
         </div>
       </aside>
 
-      <main className="main-panel">
+      <div className="main-column">
         <Topbar
-          onMenuClick={() => setSidebarOpen(true)}
-          onLogout={handleLogout}
-          logoutError={logoutError}
-          title={activeSection === "Chats" ? activeChat : activeSection}
-          userName={user.name}
+          activeSection={activeSection}
+          activeChat={activeChat}
+          currentPlan={currentPlan}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          onOpenCalling={() => selectSection("Calling")}
         />
-        <section className={`chat-area${activeSection !== "Chats" || messages.length ? " chat-area-active" : ""}`}>
-          {activeSection === "Explore AI" ? (
-            <div className="workspace-page">
-              <div className="page-eyebrow">YOUR CREATIVE TOOLKIT</div>
-              <h1>Explore AI</h1>
-              <p className="page-description">Pick a tool to start a focused conversation in your workspace.</p>
-              <div className="tool-grid">
-                {aiTools.map((tool) => (
-                  <button className="tool-card" type="button" key={tool.title} onClick={() => {
-                    setPrompt(tool.prompt);
-                    setActiveChat(tool.title);
-                    setActiveSection("Chats");
-                    setSidebarOpen(false);
-                  }}>
-                    <span className="tool-card-icon">{tool.icon}</span>
-                    <strong>{tool.title}</strong>
-                    <span>{tool.description}</span>
-                    <span className="tool-card-action">Open tool <span aria-hidden="true">↗</span></span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : activeSection === "Library" ? (
-            <div className="workspace-page">
-              <div className="page-eyebrow">YOUR PERSONAL LIBRARY</div>
-              <h1>Projects</h1>
-              <p className="page-description">Pick up where you left off, or save a conversation as a project.</p>
-              <div className="project-grid">
-                {projects.map((project) => (
-                  <article className="project-card" key={project.title}>
-                    <span className="project-card-icon" aria-hidden="true">▤</span>
-                    <h2>{project.title}</h2>
-                    <p>{project.description}</p>
-                    <button type="button" onClick={() => openProject(project)}>Open project <span aria-hidden="true">↗</span></button>
-                  </article>
-                ))}
-              </div>
-            </div>
-          ) : activeSection === "Plans" ? (
-            <div className="workspace-page plans-page">
-              <div className="page-eyebrow">SIMPLE, FLEXIBLE PLANS</div>
-              <h1>Choose your plan</h1>
-              <p className="page-description">Start free, and pick a plan that fits the way you create.</p>
-              {subscriptionSuccess && <p className="subscription-success" role="status">{subscriptionSuccess}</p>}
-              <div className="plan-grid">
-                {plans.map((plan) => (
-                  <article className={`subscription-card${plan.name === "Pro" ? " subscription-card-featured" : ""}`} key={plan.name}>
-                    {plan.name === "Pro" && <span className="popular-badge">POPULAR</span>}
-                    <h2>{plan.name}</h2>
-                    <p className="subscription-description">{plan.description}</p>
-                    <p className="plan-price">{plan.price}<span>/ month</span></p>
-                    <ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-                    <button type="button" onClick={() => openPlanDialog(plan)}>{currentPlan === plan.name ? "Current plan" : `Choose ${plan.name}`}</button>
-                  </article>
-                ))}
-              </div>
-              <p className="demo-disclaimer">Demo subscriptions only. No payment or SMS is processed.</p>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="welcome-content">
-              <div className="welcome-eyebrow"><span className="eyebrow-sparkle">✳</span> YOUR AI, YOUR WAY</div>
-              <h1>A little help can<br />go a <span>long way.</span></h1>
-              <p className="welcome-description">
-                Think it through, make something new, or just get unstuck.
-                <br className="desktop-break" /> Start wherever you are.
-              </p>
-              {subscriptionSuccess && <p className="subscription-success" role="status">{subscriptionSuccess}</p>}
-              {renderPromptBox()}
 
-              <div className="suggestions">
-                <div className="suggestions-heading">
-                  <span>Not sure where to start?</span><span className="suggestions-sparkle">✳</span>
-                </div>
-                <div className="suggestion-grid">
-                  {suggestions.map((suggestion) => (
-                    <button className="suggestion-card" type="button" key={suggestion.title} onClick={() => setPrompt(suggestion.prompt)}>
-                      <span className={`suggestion-icon suggestion-icon-${suggestion.color}`}>
-                        <svg viewBox="0 0 24 24" aria-hidden="true">{suggestion.icon}</svg>
-                      </span>
-                      <span><strong>{suggestion.title}</strong><small>{suggestion.detail}</small></span>
-                      <span className="suggestion-arrow">↗</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="welcome-footer"><span>Made for the moments in between.</span><span className="footer-sparkle">✳</span></div>
+        {subscriptionSuccess && (
+          <div className="banner-success" role="status">
+            <span>{subscriptionSuccess}</span>
+            <button type="button" onClick={() => setSubscriptionSuccess("")}>×</button>
+          </div>
+        )}
+
+        {isLiveCall && (
+          <section className="live-call-bar" aria-live="polite">
+            <div className="live-call-info">
+              <strong>Aura.ai Live Call ({USER_PHONE_NUMBER})</strong>
+              <span>
+                {isSpeaking ? "Speaking..." : isListening ? "Listening..." : isSending ? "Thinking..." : "Connected"}
+              </span>
+              {liveTranscript && <p>{liveTranscript}</p>}
+              {liveError && <p className="error-text">{liveError}</p>}
             </div>
-          ) : (
-            <div className="conversation">
-              <div className="conversation-title"><span className="conversation-icon">✳</span><h1>{activeChat === "New chat" ? "Your conversation" : activeChat}</h1></div>
-              <div className="conversation-messages" aria-live="polite">
-                {messages.map((message, index) => (
-                  <div className={`message-row message-row-${message.role}`} key={`${index}-${message.role}-${message.content.slice(0, 24)}`}>
-                    {message.role === "user" ? (
-                      <span className="avatar message-avatar">S</span>
-                    ) : (
-                      <SparkleMark className="assistant-note-mark message-avatar assistant-avatar" />
-                    )}
-                    <p>{message.content}</p>
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
+            <div className="live-call-controls">
+              <button type="button" onClick={toggleMute}>
+                {isMuted ? "Unmute" : "Mute"}
+              </button>
+              <button type="button" className="hangup-btn" onClick={endLiveCall}>
+                End Call
+              </button>
+            </div>
+          </section>
+        )}
+
+        {activeSection === "Calling" ? (
+          <Calling
+            phoneNumber={USER_PHONE_NUMBER}
+            onSendPrompt={(text) => sendVoiceMessage(text)}
+            onEndCall={endLiveCall}
+          />
+        ) : activeSection === "AI Tools" ? (
+          <section className="panel-view">
+            <h2>AI Tools</h2>
+            <div className="card-grid">
+              {aiTools.map((tool) => (
+                <button
+                  key={tool.title}
+                  type="button"
+                  className="info-card"
+                  onClick={() => openProject(tool)}
+                >
+                  <span className="card-badge">{tool.icon}</span>
+                  <strong>{tool.title}</strong>
+                  <p>{tool.description}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : activeSection === "Projects" ? (
+          <section className="panel-view">
+            <div className="panel-header">
+              <h2>Projects</h2>
+              {messages.length > 0 && (
+                <button type="button" className="secondary-btn" onClick={saveCurrentProject}>
+                  Save current chat
+                </button>
+              )}
+            </div>
+            <div className="card-grid">
+              {projects.map((project) => (
+                <button
+                  key={project.title}
+                  type="button"
+                  className="info-card"
+                  onClick={() => openProject(project)}
+                >
+                  <strong>{project.title}</strong>
+                  <p>{project.description}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : activeSection === "Subscription" ? (
+          <section className="panel-view">
+            <h2>Subscription Plans</h2>
+            <div className="card-grid">
+              {plans.map((plan) => (
+                <div key={plan.name} className="info-card plan-card">
+                  <strong>{plan.name}</strong>
+                  <div className="plan-price">{plan.price}<span>/mo</span></div>
+                  <p>{plan.description}</p>
+                  <ul>
+                    {plan.features.map((feature) => <li key={feature}>{feature}</li>)}
+                  </ul>
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={() => openPlanDialog(plan)}
+                  >
+                    {currentPlan === plan.name ? "Current plan" : `Choose ${plan.name}`}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {selectedPlan && (
+              <form className="otp-box" onSubmit={confirmSubscription}>
+                <h3>Confirm {selectedPlan.name} ({selectedPlan.price}/mo)</h3>
+                <label>
+                  10-digit Mobile Number
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={handlePhoneNumberChange}
+                    placeholder="9216393256"
+                  />
+                </label>
+                {generatedOtp && (
+                  <label>
+                    Enter Demo OTP
+                    <input
+                      type="text"
+                      value={otp}
+                      onChange={(event) => setOtp(event.target.value)}
+                      placeholder="6-digit OTP"
+                    />
+                  </label>
+                )}
+                {subscriptionError && <p className="error-text">{subscriptionError}</p>}
+                <div className="otp-actions">
+                  <button type="submit" className="primary-btn">Confirm</button>
+                  <button type="button" className="secondary-btn" onClick={() => setSelectedPlan(null)}>Cancel</button>
+                </div>
+              </form>
+            )}
+          </section>
+        ) : isLandingScreen ? (
+          <main className="landing-main">
+            <h1 className="landing-title">
+              A little help can <br /> go a <em>long way.</em>
+            </h1>
+            <p className="landing-subtitle">
+              Think it through, make something new, or just get unstuck.
+              <br />
+              Start wherever you are.
+            </p>
+
+            {renderPromptBox(false)}
+
+            <div className="suggestions-header">
+              <span>Not sure where to start?</span>
+              <span className="sparkle-accent">✳</span>
+            </div>
+
+            <div className="suggestions-grid">
+              {suggestions.map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  className="suggestion-card"
+                  onClick={() => openProject(item)}
+                >
+                  <span className={`suggestion-icon ${item.color}`}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">{item.icon}</svg>
+                  </span>
+                  <span className="suggestion-text">
+                    <strong>{item.title}</strong>
+                    <small>{item.detail}</small>
+                  </span>
+                  <span className="suggestion-arrow" aria-hidden="true">↗</span>
+                </button>
+              ))}
+            </div>
+
+            <footer className="landing-footer">
+              Made for the moments in between. <span className="sparkle-accent">✳</span>
+            </footer>
+          </main>
+        ) : (
+          <main className="chat-main">
+            <div className="messages-list">
+              {messages.map((msg, index) => (
+                <div key={index} className={`message-row ${msg.role}`}>
+                  <div className="message-bubble">{msg.content}</div>
+                </div>
+              ))}
               {isSending && (
-                <div className="assistant-note" role="status">
-                  <SparkleMark className="assistant-note-mark" />
-                  <p>Thinking through your message...</p>
+                <div className="message-row assistant">
+                  <div className="message-bubble">Thinking...</div>
                 </div>
               )}
-              {chatError && <p className="chat-error" role="alert">{chatError}</p>}
-              {subscriptionSuccess && <p className="subscription-success" role="status">{subscriptionSuccess}</p>}
-              <button className="save-project-button" type="button" onClick={saveCurrentProject}>Save chat to Library</button>
-              {renderPromptBox(true)}
+              {chatError && <p className="error-text">{chatError}</p>}
+              <div ref={messagesEndRef} />
             </div>
-          )}
-        </section>
-      </main>
-      {isLiveCall && (
-        <div className="live-call-backdrop" role="dialog" aria-modal="true" aria-label="Live voice conversation">
-          <section className="live-call-card">
-            <div className="live-call-header">
-              <span className="live-status-dot" />
-              <span>{isMuted ? "Muted" : isSpeaking ? "AI speaking" : isListening ? "Listening" : "Connecting"}</span>
-            </div>
-            <div className={`live-orb${isListening || isSpeaking ? " live-orb-active" : ""}`}>
-              <SparkleMark />
-            </div>
-            <h2>Talk with auraAI</h2>
-            {liveError ? <p className="live-call-error" role="alert">{liveError}</p> : <p className="live-transcript" aria-live="polite">{liveTranscript}</p>}
-            <div className="live-call-controls">
-              <button className={`live-control${isMuted ? " live-control-active" : ""}`} type="button" aria-label={isMuted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z" /><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8" /></svg>
-              </button>
-              <button className="live-control live-control-end" type="button" aria-label="End live call" onClick={endLiveCall}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15.5c4.5-3.4 9.5-3.4 14 0l-2 3-3-1.5-.8-2.5c-1.5-.3-3-.3-4.4 0L8 17l-3 1.5Z" /></svg>
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-      {selectedPlan && (
-        <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setSelectedPlan(null);
-        }}>
-          <section className="subscription-dialog" role="dialog" aria-modal="true" aria-labelledby="subscription-title">
-            <button className="dialog-close" type="button" aria-label="Close dialog" onClick={() => setSelectedPlan(null)}>×</button>
-            <div className="page-eyebrow">SUBSCRIPTION</div>
-            <h2 id="subscription-title">Choose {selectedPlan.name}</h2>
-            <p className="page-description">{selectedPlan.price} / month · Confirm your mobile number</p>
-            <form onSubmit={confirmSubscription}>
-              <label htmlFor="subscription-phone">Mobile number</label>
-              <div className="phone-input">
-                <span>+91</span>
-                <input id="subscription-phone" type="tel" inputMode="numeric" autoComplete="tel-national" maxLength={10} placeholder="10-digit number" value={phoneNumber} onChange={handlePhoneNumberChange} required />
-              </div>
-              <label htmlFor="subscription-otp">6-digit OTP</label>
-              <input id="subscription-otp" className="dialog-input" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Enter the OTP shown in the alert" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} required />
-              {generatedOtp && <p className="otp-demo-note" role="status">Demo OTP: <strong>{generatedOtp}</strong> · No SMS was sent.</p>}
-              {subscriptionError && <p className="dialog-error" role="alert">{subscriptionError}</p>}
-              <button className="dialog-submit" type="submit">Continue with {selectedPlan.name}</button>
-            </form>
-          </section>
-        </div>
-      )}
+            {renderPromptBox(true)}
+          </main>
+        )}
+      </div>
     </div>
   );
 }
